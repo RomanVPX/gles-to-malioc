@@ -309,11 +309,20 @@ function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShad
     return hwPipeline?.display_name || pipelineName;
   };
 
+  // Helper to format numbers with reasonable precision
+  const formatNumber = (value: number | string | boolean): string => {
+    if (typeof value === "number") {
+      // Round to 3 decimal places for readability
+      return Number(value.toFixed(3)).toString();
+    }
+    return String(value);
+  };
+
   // Helper to format performance table row
   const perfRow = (title: string, cost: MaliShaderCost) => {
     const cycles = pipelines.map((_, i) => {
       const count = cost.cycle_count[i];
-      return count !== null ? String(count) : "N/A";
+      return count !== null ? formatNumber(count) : "N/A";
     }).map(s => s.padStart(8));
 
     const boundPipeline = cost.bound_pipelines[0];
@@ -337,19 +346,19 @@ function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShad
 ---
 
 ## Resource Usage (${variant.name})
-- **Work Registers:** ${getProp("work_registers_used")}
-- **Uniform Registers:** ${getProp("uniform_registers_used")}
-- **Stack Spilling:** ${String(getProp("has_stack_spilling"))}${getProp("stack_spill_bytes") !== "N/A" && Number(getProp("stack_spill_bytes")) > 0 ? ` (${getProp("stack_spill_bytes")} bytes)` : ''}
-- **16-bit Arithmetic:** ${getProp("fp16_arithmetic")}%
+- **Work Registers:** ${formatNumber(getProp("work_registers_used"))}
+- **Uniform Registers:** ${formatNumber(getProp("uniform_registers_used"))}
+- **Stack Spilling:** ${String(getProp("has_stack_spilling"))}${getProp("stack_spill_bytes") !== "N/A" && Number(getProp("stack_spill_bytes")) > 0 ? ` (${formatNumber(getProp("stack_spill_bytes"))} bytes)` : ''}
+- **16-bit Arithmetic:** ${formatNumber(getProp("fp16_arithmetic"))}%
 
 ---
 
 ## Performance Metrics
 | Metric                      | ${headerRow} | Bound       |
 | --------------------------- | ${separatorRow} | ----------- |
-${perfRow("Total instruction cycles", variant.performance.total_cycles)}
-${perfRow("Shortest path cycles", variant.performance.shortest_path_cycles)}
-${perfRow("Longest path cycles", variant.performance.longest_path_cycles)}
+${perfRow("Total", variant.performance.total_cycles)}
+${perfRow("Shortest path", variant.performance.shortest_path_cycles)}
+${perfRow("Longest path", variant.performance.longest_path_cycles)}
 
 ${shader.warnings.length > 0 ? `## Warnings
 ${shader.warnings.map(warning => `⚠️ ${warning}`).join('\n')}
