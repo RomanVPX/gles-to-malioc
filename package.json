@@ -8,19 +8,12 @@
   "license": "MIT",
   "commands": [
     {
-      "name": "compile",
-      "title": "Compile",
-      "description": "",
-      "mode": "no-view"
-    }
-  ,
-    {
-      "name": "verify-malioc",
-      "title": "Verify MaliOC",
-      "description": "",
+      "name": "profile-shader",
+      "title": "Profile Shader with MaliOC",
+      "description": "Compiles selected GLES shader code with MaliOC and shows performance stats.",
       "mode": "view"
     }
-      ],
+  ],
   "dependencies": {
     "@raycast/api": "^1.102.6",
     "@raycast/utils": "^1.17.0"
