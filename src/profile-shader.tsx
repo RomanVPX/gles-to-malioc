@@ -4,6 +4,7 @@ import {
   Form,
   showToast,
   Toast,
+  getPreferenceValues,
   Detail,
   useNavigation,
   getSelectedText,
@@ -14,7 +15,11 @@ import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
-const MALIOC_PATH = "/Applications/Arm_Performance_Studio_2025.4/mali_offline_compiler/malioc";
+interface Preferences {
+  pathToMaliOC: string;
+}
+
+const MALIOC_PATH = getPreferenceValues<Preferences>().pathToMaliOC;
 
 // --- Interfaces for MaliOC JSON structure (based on real JSON schemas) ---
 interface MaliProducer {

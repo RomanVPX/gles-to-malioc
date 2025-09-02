@@ -6,6 +6,16 @@
   "icon": "extension-icon.png",
   "author": "RomanVPX",
   "license": "MIT",
+  "preferences": [
+    {
+      "name": "pathToMaliOC",
+      "description": "Path to the Mali Offline Compiler executable",
+      "type": "file",
+      "required": true,
+      "title": "MaliOC Executable",
+      "placeholder": "/Applications/Arm_Performance_Studio_2025.4/mali_offline_compiler/malioc"
+    }
+  ],
   "commands": [
     {
       "name": "profile-shader",
