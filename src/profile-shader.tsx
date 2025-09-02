@@ -126,6 +126,30 @@ interface GpuCore {
 
 type OutputMode = "text" | "json";
 
+// --- MaliOC Validation ---
+async function validateMaliOC(path: string): Promise<{isValid: boolean, error?: string}> {
+  return new Promise((resolve) => {
+    exec(`"${path}" --version`, (error, stdout, stderr) => {
+      if (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          resolve({ isValid: false, error: "MaliOC executable not found at specified path" });
+        } else {
+          resolve({ isValid: false, error: `Failed to execute MaliOC: ${error.message}` });
+        }
+        return;
+      }
+
+      // Check if output contains "Mali Offline Compiler"
+      const output = stdout + stderr;
+      if (output.toLowerCase().includes("mali offline compiler")) {
+        resolve({ isValid: true });
+      } else {
+        resolve({ isValid: false, error: "File is not Mali Offline Compiler executable" });
+      }
+    });
+  });
+}
+
 // --- Main Component ---
 export default function ProfileShader() {
   const { push } = useNavigation();
@@ -135,43 +159,61 @@ export default function ProfileShader() {
   const [gpuCores, setGpuCores] = useState<GpuCore[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [coresError, setCoresError] = useState<string | undefined>(undefined);
-  const fetchGpuCoresStarted = useRef(false);
+  const [maliocValid, setMaliocValid] = useState<boolean | null>(null);
+  const [maliocError, setMaliocError] = useState<string | undefined>(undefined);
+  const validateMaliocStarted = useRef(false);
 
 
   useEffect(() => {
-    if (fetchGpuCoresStarted.current) {
+    if (validateMaliocStarted.current) {
         return;
     }
-    fetchGpuCoresStarted.current = true;
+    validateMaliocStarted.current = true;
 
-    async function fetchGpuCores() {
+    async function validateAndFetchCores() {
         try {
-            const command = `${MALIOC_PATH} -l`;
+            // First validate MaliOC
+            const validation = await validateMaliOC(MALIOC_PATH);
+            setMaliocValid(validation.isValid);
+
+            if (!validation.isValid) {
+                setMaliocError(validation.error);
+                setIsLoading(false);
+                showToast({
+                    style: Toast.Style.Failure,
+                    title: "MaliOC Path Invalid",
+                    message: validation.error || "Please check your MaliOC installation path in preferences"
+                });
+                return;
+            }
+
+            // If MaliOC is valid, fetch GPU cores
+            const command = `"${MALIOC_PATH}" -l`;
             exec(command, (error, stdout) => {
                 if (error) {
-                    console.error("MaliOC not found or failed to execute:", error);
-                    setCoresError("MaliOC not found. Please check your installation.");
-                    setIsLoading(false);
-                    return;
-                }
-                const lines = stdout.trim().split("\n");
-                const cores = lines
-                    .map((line) => line.split(/\s+/)[0])
-                    .filter((name) => name.startsWith("Mali-"))
-                    .map((name) => ({ id: name.replace("Mali-", ""), name: name }));
-                setGpuCores(cores);
-                if (cores.length > 0) {
-                    setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
+                    console.error("MaliOC cores fetch failed:", error);
+                    setCoresError("Could not fetch GPU cores. Please enter one manually.");
+                } else {
+                    const lines = stdout.trim().split("\n");
+                    const cores = lines
+                        .map((line) => line.split(/\s+/)[0])
+                        .filter((name) => name.startsWith("Mali-"))
+                        .map((name) => ({ id: name.replace("Mali-", ""), name: name }));
+                    setGpuCores(cores);
+                    if (cores.length > 0) {
+                        setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
+                    }
                 }
                 setIsLoading(false);
             });
         } catch (e) {
-            console.error(e);
-            setCoresError("Could not fetch GPU cores. Please enter one manually.");
+            console.error("Validation error:", e);
+            setMaliocError("Unexpected error during MaliOC validation");
             setIsLoading(false);
         }
     }
-    fetchGpuCores();
+
+    validateAndFetchCores();
   }, []);
 
   async function handleSubmit() {
@@ -197,16 +239,44 @@ export default function ProfileShader() {
     }
   }
 
+  // Block UI if MaliOC is invalid
+  if (maliocValid === false) {
+    return (
+      <Form
+        actions={
+          <ActionPanel>
+            <Action title="Fix MaliOC Path" onAction={() => showToast({
+              style: Toast.Style.Failure,
+              title: "Open Raycast Preferences",
+              message: "Go to Extensions → GLES to MaliOC → Configure MaliOC Path"
+            })} />
+          </ActionPanel>
+        }
+      >
+        <Form.Description
+          title="⚠️ MaliOC Path Invalid"
+          text={`${maliocError}\n\nPlease check your MaliOC installation path in extension preferences.\n\nExpected: Mali Offline Compiler executable\nCurrent path: ${MALIOC_PATH}`}
+        />
+      </Form>
+    );
+  }
+
   return (
     <Form
       isLoading={isLoading}
       actions={
-        <ActionPanel>
-          <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
-        </ActionPanel>
+        maliocValid === true ? (
+          <ActionPanel>
+            <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
+          </ActionPanel>
+        ) : (
+          <ActionPanel>
+            <Action title="Validating MaliOC..." onAction={() => {}} />
+          </ActionPanel>
+        )
       }
     >
-      <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={setShaderType}>
+      <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={setShaderType} storeValue>
         <Form.Dropdown.Item value="auto" title="Auto-detect" />
         <Form.Dropdown.Item value="vertex" title="Vertex" />
         <Form.Dropdown.Item value="fragment" title="Fragment" />
@@ -214,13 +284,13 @@ export default function ProfileShader() {
       {coresError || gpuCores.length === 0 ? (
         <Form.TextField id="gpuCore" title="GPU Core" placeholder="e.g., G57" value={gpuCore} onChange={setGpuCore} error={coresError} />
       ) : (
-        <Form.Dropdown id="gpuCore" title="GPU Core" value={gpuCore} onChange={setGpuCore}>
+        <Form.Dropdown id="gpuCore" title="GPU Core" value={gpuCore} onChange={setGpuCore} storeValue>
           {gpuCores.map((core) => (
             <Form.Dropdown.Item key={core.id} value={core.id} title={core.name} />
           ))}
         </Form.Dropdown>
       )}
-      <Form.Dropdown id="outputMode" title="Output Mode" value={outputMode} onChange={(value) => setOutputMode(value as OutputMode)}>
+      <Form.Dropdown id="outputMode" title="Output Mode" value={outputMode} onChange={(value) => setOutputMode(value as OutputMode)} storeValue>
         <Form.Dropdown.Item value="text" title="Plain Text" />
         <Form.Dropdown.Item value="json" title="Structured Report" />
       </Form.Dropdown>
