@@ -133,6 +133,22 @@ const GPU_CORES_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 type GpuCoresCache = { cores: GpuCore[]; timestamp: number };
 
+// --- Default GPU Core (LocalStorage) ---
+const DEFAULT_GPU_CORE_KEY = "default_gpu_core";
+
+async function getDefaultGpuCore(): Promise<string | null> {
+  try {
+    const val = await LocalStorage.getItem<string>(DEFAULT_GPU_CORE_KEY);
+    return val ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function setDefaultGpuCoreLocal(coreId: string): Promise<void> {
+  await LocalStorage.setItem(DEFAULT_GPU_CORE_KEY, coreId);
+}
+
 async function loadGpuCoresFromCache(): Promise<GpuCoresCache | null> {
   try {
     const raw = await LocalStorage.getItem<string>(GPU_CORES_CACHE_KEY);
@@ -156,20 +172,32 @@ function isCacheFresh(timestamp: number): boolean {
 
 async function fetchGpuCoresFromMalioc(): Promise<GpuCore[]> {
   return new Promise((resolve, reject) => {
-    const command = `"${MALIOC_PATH}" -l`;
-    exec(command, (error, stdout) => {
+    const command = `"${MALIOC_PATH}" --list --format json`;
+    exec(command, (error, stdout, stderr) => {
       if (error) {
-        reject(error);
+        reject(new Error(stderr || error.message));
         return;
       }
-      const lines = stdout.trim().split("\n");
-      const cores = lines
-        .map((line) => line.split(/\s+/)[0])
-        .filter((name) => name.startsWith("Mali-"))
-        .map((name) => ({ id: name.replace("Mali-", ""), name }));
-      resolve(cores);
+      try {
+        // JSON schema: { cores: [{ core: string, apis: string[] }], ... }
+        const parsed = JSON.parse(stdout) as { cores?: { core: string; apis?: string[] }[] };
+        const coresList = (parsed.cores ?? []).map((c) => c.core).filter(Boolean);
+        const cores: GpuCore[] = coresList.map((coreName) => ({ id: coreName, name: coreName }));
+        resolve(cores);
+      } catch (e) {
+        reject(new Error(`Failed to parse MaliOC cores JSON: ${(e as Error).message}`));
+      }
     });
   });
+}
+
+// Choose preferred core: default if present (exact match), else first.
+function chooseCore(cores: GpuCore[], defaultCore?: string | null): string {
+  if (!cores.length) return "";
+  if (defaultCore && cores.some((c) => c.id === defaultCore)) {
+    return defaultCore;
+  }
+  return cores[0].id;
 }
 
 // --- MaliOC Validation ---
@@ -200,7 +228,7 @@ async function validateMaliOC(path: string): Promise<{isValid: boolean, error?: 
 export default function ProfileShader() {
   const { push } = useNavigation();
   const [shaderType, setShaderType] = useState("auto");
-  const [gpuCore, setGpuCore] = useState("G57");
+  const [gpuCore, setGpuCore] = useState("");
   const [outputMode, setOutputMode] = useState<OutputMode>("json"); // Default to JSON now
   const [gpuCores, setGpuCores] = useState<GpuCore[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,11 +246,12 @@ export default function ProfileShader() {
 
     async function validateAndFetchCores() {
         try {
+            const defaultCore = await getDefaultGpuCore();
             // Load from cache for fast UI
             const cached = await loadGpuCoresFromCache();
             if (cached && cached.cores.length > 0) {
                 setGpuCores(cached.cores);
-                setGpuCore(cached.cores.find((c) => c.id === "G57")?.id ?? cached.cores[0].id);
+                setGpuCore(chooseCore(cached.cores, defaultCore));
                 setIsLoading(false);
             }
 
@@ -248,12 +277,15 @@ export default function ProfileShader() {
                     const cores = await fetchGpuCoresFromMalioc();
                     setGpuCores(cores);
                     if (cores.length > 0) {
-                        setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
+                        setGpuCore(chooseCore(cores, defaultCore));
                     }
                     await saveGpuCoresToCache(cores);
                 } catch (error) {
                     console.error("MaliOC cores fetch failed:", error);
                     setCoresError("Could not fetch GPU cores. Please enter one manually.");
+                    if (defaultCore) {
+                      setGpuCore(defaultCore);
+                    }
                 }
             }
 
@@ -291,6 +323,15 @@ export default function ProfileShader() {
     }
   }
 
+  async function handleSetDefaultGpuCore() {
+    try {
+      await setDefaultGpuCoreLocal(gpuCore);
+      await showToast({ style: Toast.Style.Success, title: "Default GPU Core Set", message: `${gpuCore}` });
+    } catch {
+      await showToast({ style: Toast.Style.Failure, title: "Failed to Set Default" });
+    }
+  }
+
   async function handleRefreshCores() {
     if (maliocValid !== true) {
       await showToast({ style: Toast.Style.Failure, title: "MaliOC Not Valid", message: "Cannot refresh cores until MaliOC path is valid." });
@@ -299,10 +340,10 @@ export default function ProfileShader() {
     setIsLoading(true);
     setCoresError(undefined);
     try {
-      const cores = await fetchGpuCoresFromMalioc();
+      const [cores, defaultCore] = await Promise.all([fetchGpuCoresFromMalioc(), getDefaultGpuCore()]);
       setGpuCores(cores);
       if (cores.length > 0) {
-        setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
+        setGpuCore(chooseCore(cores, defaultCore));
       }
       await saveGpuCoresToCache(cores);
       await showToast({ style: Toast.Style.Success, title: "GPU Cores Updated", message: `Loaded ${cores.length} cores` });
@@ -345,6 +386,7 @@ export default function ProfileShader() {
           <ActionPanel>
             <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
             <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
+            <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} />
           </ActionPanel>
         ) : (
           <ActionPanel>
@@ -359,9 +401,15 @@ export default function ProfileShader() {
         <Form.Dropdown.Item value="fragment" title="Fragment" />
       </Form.Dropdown>
       {coresError || gpuCores.length === 0 ? (
-        <Form.TextField id="gpuCore" title="GPU Core" placeholder="e.g., G57" value={gpuCore} onChange={setGpuCore} error={coresError} />
+        <Form.TextField
+          id="gpuCoreInput"
+          title="GPU Core"
+          value={gpuCore}
+          onChange={(val) => setGpuCore(typeof val === "string" ? val : (val as any)?.text ?? "")}
+          error={coresError}
+        />
       ) : (
-        <Form.Dropdown id="gpuCore" title="GPU Core" value={gpuCore} onChange={setGpuCore} storeValue>
+        <Form.Dropdown id="gpuCore" title="GPU Core" value={gpuCore} onChange={(val) => setGpuCore(val)} storeValue>
           {gpuCores.map((core) => (
             <Form.Dropdown.Item key={core.id} value={core.id} title={core.name} />
           ))}
@@ -583,7 +631,8 @@ async function processShader(content: string, type: string, core: string, mode: 
   const tempPath = join(tmpdir(), `shader_${Date.now()}.glsl`);
   await writeFile(tempPath, processedContent);
   const formatFlag = mode === "json" ? "--format json" : "";
-  const command = `${MALIOC_PATH} ${formatFlag} --${detectedType} --core "Mali-${core}" "${tempPath}"`;
+  // Pass the core as-is (full name, e.g., "Mali-G57" or "Immortalis-G720")
+  const command = `${MALIOC_PATH} ${formatFlag} --${detectedType} --core "${core}" "${tempPath}"`;
 
   console.log("Executing command:", command);
   console.log("Shader content:\n---\n", processedContent, "\n---");
