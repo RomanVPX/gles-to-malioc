@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { exec } from "child_process";
 import { writeFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import { join } from "path";
 
 interface Preferences {
@@ -481,12 +481,110 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
   if (mode === "json") {
     try {
       const jsonData = JSON.parse(output) as MaliJsonOutput;
-      return <Detail markdown={formatJsonReport(jsonData)} />;
+      const markdown = formatJsonReport(jsonData);
+
+      const shaderInfo = (jsonData as any).shaders?.[0];
+      const core = shaderInfo?.hardware?.core ?? "unknown-core";
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const baseName = `malioc-report-${core}-${timestamp}`;
+
+      async function saveFile(filename: string, contents: string) {
+        const downloads = join(homedir(), "Downloads");
+        let target = join(downloads, filename);
+        try {
+          await writeFile(target, contents, { encoding: "utf8" });
+        } catch (e) {
+          // fallback to tmp if Downloads not accessible
+          target = join(tmpdir(), filename);
+          await writeFile(target, contents, { encoding: "utf8" });
+        }
+        await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+      }
+
+      return (
+        <Detail
+          markdown={markdown}
+          actions={
+            <ActionPanel>
+              <Action.CopyToClipboard title="Copy Markdown Report" content={markdown} />
+              <Action.CopyToClipboard title="Copy Raw JSON" content={output} />
+              <Action
+                title="Save Markdown Report"
+                onAction={async () => {
+                  await saveFile(`${baseName}.md`, markdown);
+                }}
+              />
+              <Action
+                title="Save Raw JSON"
+                onAction={async () => {
+                  await saveFile(`${baseName}.json`, JSON.stringify(jsonData, null, 2));
+                }}
+              />
+            </ActionPanel>
+          }
+        />
+      );
     } catch (error) {
-      return <Detail markdown={`## Failed to parse JSON\n\n**Error:**\n\`\`\`\n${error}\n\`\`\`\n\n**Raw Output:**\n\`\`\`\n${output}\n\`\`\` `} />;
+      const markdown = `## Failed to parse JSON\n\n**Error:**\n\`\`\`\n${error}\n\`\`\`\n\n**Raw Output:**\n\`\`\`\n${output}\n\`\`\``;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      async function saveFile(filename: string, contents: string) {
+        const downloads = join(homedir(), "Downloads");
+        let target = join(downloads, filename);
+        try {
+          await writeFile(target, contents, { encoding: "utf8" });
+        } catch (e) {
+          target = join(tmpdir(), filename);
+          await writeFile(target, contents, { encoding: "utf8" });
+        }
+        await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+      }
+      return (
+        <Detail
+          markdown={markdown}
+          actions={
+            <ActionPanel>
+              <Action.CopyToClipboard title="Copy Raw Output" content={output} />
+              <Action
+                title="Save Raw Output"
+                onAction={async () => {
+                  await saveFile(`malioc-output-${timestamp}.txt`, output);
+                }}
+              />
+            </ActionPanel>
+          }
+        />
+      );
     }
   }
-  return <Detail markdown={`\`\`\`\n${output}\n\`\`\``} />;
+  const markdown = `\`\`\`\n${output}\n\`\`\``;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  async function saveFile(filename: string, contents: string) {
+    const downloads = join(homedir(), "Downloads");
+    let target = join(downloads, filename);
+    try {
+      await writeFile(target, contents, { encoding: "utf8" });
+    } catch (e) {
+      target = join(tmpdir(), filename);
+      await writeFile(target, contents, { encoding: "utf8" });
+    }
+    await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+  }
+  return (
+    <Detail
+      markdown={markdown}
+      actions={
+        <ActionPanel>
+          <Action.CopyToClipboard title="Copy Output" content={output} />
+          <Action
+            title="Save Output as Markdown"
+            onAction={async () => {
+              await saveFile(`malioc-output-${timestamp}.md`, markdown);
+            }}
+          />
+        </ActionPanel>
+      }
+    />
+  );
 }
 
 function formatJsonReport(data: MaliJsonOutput): string {
