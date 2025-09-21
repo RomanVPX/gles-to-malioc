@@ -227,7 +227,8 @@ async function validateMaliOC(path: string): Promise<{isValid: boolean, error?: 
 // --- Main Component ---
 export default function ProfileShader() {
   const { push } = useNavigation();
-  const [shaderType, setShaderType] = useState("auto");
+  type ShaderType = "vertex" | "fragment" | "unset";
+  const [shaderType, setShaderType] = useState<ShaderType>("unset");
   const [gpuCore, setGpuCore] = useState("");
   const [outputMode, setOutputMode] = useState<OutputMode>("json"); // Default to JSON now
   const [gpuCores, setGpuCores] = useState<GpuCore[]>([]);
@@ -236,6 +237,7 @@ export default function ProfileShader() {
   const [maliocValid, setMaliocValid] = useState<boolean | null>(null);
   const [maliocError, setMaliocError] = useState<string | undefined>(undefined);
   const validateMaliocStarted = useRef(false);
+
 
 
   useEffect(() => {
@@ -300,6 +302,43 @@ export default function ProfileShader() {
     validateAndFetchCores();
   }, []);
 
+  // --- Shader Type Detection (on demand) ---
+  function detectShaderTypeFromText(text: string): Exclude<ShaderType, "unset"> | null {
+    try {
+      const src = text.trim();
+      if (!src) return null;
+      const lines = src.split(/\r?\n/).map((l) => l.trim());
+      // Skip initial empty/comment lines
+      let i = 0;
+      while (i < lines.length && (lines[i] === "" || lines[i].startsWith("//") || lines[i].startsWith("/*"))) i++;
+      const first = lines[i] ?? "";
+      const vtxRe = /^#\s*if(def)?\b.*\bVERTEX\b/i;
+      const fragRe = /^#\s*if(def)?\b.*\bFRAGMENT\b/i;
+      if (vtxRe.test(first)) return "vertex";
+      if (fragRe.test(first)) return "fragment";
+      // Simple heuristics as a fallback
+      if (src.includes("gl_Position")) return "vertex";
+      if (src.includes("gl_FragCoord") || /\bout\s+vec[234]/.test(src)) return "fragment";
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleDetectShaderType() {
+    try {
+      const text = await getSelectedText();
+      const detected = detectShaderTypeFromText(text);
+      if (detected) {
+        setShaderType(detected);
+      } else {
+        await showToast({ style: Toast.Style.Failure, title: "Не удалось определить тип шейдера", message: "Выберите тип вручную" });
+      }
+    } catch (e) {
+      await showToast({ style: Toast.Style.Failure, title: "Не удалось получить выделенный текст", message: "Выделите код шейдера и повторите" });
+    }
+  }
+
   async function handleSubmit() {
     setIsLoading(true);
     let shaderContent = "";
@@ -309,6 +348,11 @@ export default function ProfileShader() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not get selected text.";
       await showToast({ style: Toast.Style.Failure, title: "Error Getting Text", message });
+      setIsLoading(false);
+      return;
+    }
+    if (shaderType === "unset") {
+      await showToast({ style: Toast.Style.Failure, title: "Select Shader Type", message: "Выберите тип шейдера или используйте Detect Shader Type" });
       setIsLoading(false);
       return;
     }
@@ -384,7 +428,11 @@ export default function ProfileShader() {
       actions={
         maliocValid === true ? (
           <ActionPanel>
-            <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
+            {shaderType !== "unset" ? (
+              <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
+            ) : (
+              <Action title="Detect Shader Type" onAction={handleDetectShaderType} />
+            )}
             <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
             <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} />
           </ActionPanel>
@@ -395,8 +443,13 @@ export default function ProfileShader() {
         )
       }
     >
-      <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={setShaderType} storeValue>
-        <Form.Dropdown.Item value="auto" title="Auto-detect" />
+      <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={(val) => {
+        const v = val as ShaderType;
+        setShaderType(v);
+      }}>
+        {shaderType === "unset" && (
+          <Form.Dropdown.Item value="unset" title="Select Shader Type" />
+        )}
         <Form.Dropdown.Item value="vertex" title="Vertex" />
         <Form.Dropdown.Item value="fragment" title="Fragment" />
       </Form.Dropdown>
