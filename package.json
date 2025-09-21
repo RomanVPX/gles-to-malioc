@@ -14,6 +14,23 @@
       "required": true,
       "title": "MaliOC Executable",
       "placeholder": "/Applications/Arm_Performance_Studio_2025.4/mali_offline_compiler/malioc"
+    },
+    {
+      "name": "showSavedReportInFinder",
+      "title": "Show saved report in Finder",
+      "description": "Automatically reveal the saved report file in Finder",
+      "type": "checkbox",
+      "label": "Reveal saved report after saving",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "reportsSaveDirectory",
+      "title": "Reports Save Directory",
+      "description": "Directory to save exported reports",
+      "type": "directory",
+      "default": "~/Downloads",
+      "required": false
     }
   ],
   "commands": [

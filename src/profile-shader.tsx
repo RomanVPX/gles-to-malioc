@@ -9,6 +9,7 @@ import {
   useNavigation,
   getSelectedText,
   LocalStorage,
+  showInFinder,
 } from "@raycast/api";
 import { useEffect, useRef, useState } from "react";
 import { exec } from "child_process";
@@ -18,9 +19,21 @@ import { join } from "path";
 
 interface Preferences {
   pathToMaliOC: string;
+  showSavedReportInFinder?: boolean;
+  reportsSaveDirectory?: string;
 }
 
-const MALIOC_PATH = getPreferenceValues<Preferences>().pathToMaliOC;
+const PREFERENCES = getPreferenceValues<Preferences>();
+const MALIOC_PATH = PREFERENCES.pathToMaliOC;
+const SHOW_SAVED_IN_FINDER = PREFERENCES.showSavedReportInFinder ?? true;
+const DEFAULT_SAVE_DIR = join(homedir(), "Downloads");
+
+function getReportsSaveDirectory(): string {
+  const raw = (PREFERENCES.reportsSaveDirectory || "").trim();
+  if (!raw) return DEFAULT_SAVE_DIR;
+  // Expand ~ to homedir
+  return raw.replace(/^~(?=\/|$)/, homedir());
+}
 
 // --- Interfaces for MaliOC JSON structure ---
 interface MaliProducer {
@@ -489,8 +502,8 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
       const baseName = `malioc-report-${core}-${timestamp}`;
 
       async function saveFile(filename: string, contents: string) {
-        const downloads = join(homedir(), "Downloads");
-        let target = join(downloads, filename);
+        const baseDir = getReportsSaveDirectory();
+        let target = join(baseDir, filename);
         try {
           await writeFile(target, contents, { encoding: "utf8" });
         } catch (e) {
@@ -499,6 +512,9 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
           await writeFile(target, contents, { encoding: "utf8" });
         }
         await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+        if (SHOW_SAVED_IN_FINDER) {
+          await showInFinder(target);
+        }
       }
 
       return (
@@ -528,8 +544,8 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
       const markdown = `## Failed to parse JSON\n\n**Error:**\n\`\`\`\n${error}\n\`\`\`\n\n**Raw Output:**\n\`\`\`\n${output}\n\`\`\``;
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       async function saveFile(filename: string, contents: string) {
-        const downloads = join(homedir(), "Downloads");
-        let target = join(downloads, filename);
+        const baseDir = getReportsSaveDirectory();
+        let target = join(baseDir, filename);
         try {
           await writeFile(target, contents, { encoding: "utf8" });
         } catch (e) {
@@ -537,6 +553,9 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
           await writeFile(target, contents, { encoding: "utf8" });
         }
         await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+        if (SHOW_SAVED_IN_FINDER) {
+          await showInFinder(target);
+        }
       }
       return (
         <Detail
@@ -559,8 +578,8 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
   const markdown = `\`\`\`\n${output}\n\`\`\``;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   async function saveFile(filename: string, contents: string) {
-    const downloads = join(homedir(), "Downloads");
-    let target = join(downloads, filename);
+    const baseDir = getReportsSaveDirectory();
+    let target = join(baseDir, filename);
     try {
       await writeFile(target, contents, { encoding: "utf8" });
     } catch (e) {
@@ -568,6 +587,9 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
       await writeFile(target, contents, { encoding: "utf8" });
     }
     await showToast({ style: Toast.Style.Success, title: "Saved", message: target });
+    if (SHOW_SAVED_IN_FINDER) {
+      await showInFinder(target);
+    }
   }
   return (
     <Detail
