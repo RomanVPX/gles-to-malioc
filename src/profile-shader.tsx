@@ -8,6 +8,7 @@ import {
   Detail,
   useNavigation,
   getSelectedText,
+  LocalStorage,
 } from "@raycast/api";
 import { useEffect, useRef, useState } from "react";
 import { exec } from "child_process";
@@ -21,7 +22,7 @@ interface Preferences {
 
 const MALIOC_PATH = getPreferenceValues<Preferences>().pathToMaliOC;
 
-// --- Interfaces for MaliOC JSON structure (based on real JSON schemas) ---
+// --- Interfaces for MaliOC JSON structure ---
 interface MaliProducer {
   name: string;
   version: [number, number, number];
@@ -126,6 +127,51 @@ interface GpuCore {
 
 type OutputMode = "text" | "json";
 
+// --- GPU Cores Cache (LocalStorage) ---
+const GPU_CORES_CACHE_KEY = "gpu_cores_cache";
+const GPU_CORES_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+type GpuCoresCache = { cores: GpuCore[]; timestamp: number };
+
+async function loadGpuCoresFromCache(): Promise<GpuCoresCache | null> {
+  try {
+    const raw = await LocalStorage.getItem<string>(GPU_CORES_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as GpuCoresCache;
+    if (!parsed.cores || !Array.isArray(parsed.cores) || typeof parsed.timestamp !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function saveGpuCoresToCache(cores: GpuCore[]) {
+  const payload: GpuCoresCache = { cores, timestamp: Date.now() };
+  await LocalStorage.setItem(GPU_CORES_CACHE_KEY, JSON.stringify(payload));
+}
+
+function isCacheFresh(timestamp: number): boolean {
+  return Date.now() - timestamp < GPU_CORES_TTL_MS;
+}
+
+async function fetchGpuCoresFromMalioc(): Promise<GpuCore[]> {
+  return new Promise((resolve, reject) => {
+    const command = `"${MALIOC_PATH}" -l`;
+    exec(command, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      const lines = stdout.trim().split("\n");
+      const cores = lines
+        .map((line) => line.split(/\s+/)[0])
+        .filter((name) => name.startsWith("Mali-"))
+        .map((name) => ({ id: name.replace("Mali-", ""), name }));
+      resolve(cores);
+    });
+  });
+}
+
 // --- MaliOC Validation ---
 async function validateMaliOC(path: string): Promise<{isValid: boolean, error?: string}> {
   return new Promise((resolve) => {
@@ -172,7 +218,15 @@ export default function ProfileShader() {
 
     async function validateAndFetchCores() {
         try {
-            // First validate MaliOC
+            // Load from cache for fast UI
+            const cached = await loadGpuCoresFromCache();
+            if (cached && cached.cores.length > 0) {
+                setGpuCores(cached.cores);
+                setGpuCore(cached.cores.find((c) => c.id === "G57")?.id ?? cached.cores[0].id);
+                setIsLoading(false);
+            }
+
+            // Validate MaliOC
             const validation = await validateMaliOC(MALIOC_PATH);
             setMaliocValid(validation.isValid);
 
@@ -187,25 +241,23 @@ export default function ProfileShader() {
                 return;
             }
 
-            // If MaliOC is valid, fetch GPU cores
-            const command = `"${MALIOC_PATH}" -l`;
-            exec(command, (error, stdout) => {
-                if (error) {
-                    console.error("MaliOC cores fetch failed:", error);
-                    setCoresError("Could not fetch GPU cores. Please enter one manually.");
-                } else {
-                    const lines = stdout.trim().split("\n");
-                    const cores = lines
-                        .map((line) => line.split(/\s+/)[0])
-                        .filter((name) => name.startsWith("Mali-"))
-                        .map((name) => ({ id: name.replace("Mali-", ""), name: name }));
+            // If cache is missing or stale, fetch fresh cores and cache them
+            const cacheIsFresh = cached ? isCacheFresh(cached.timestamp) : false;
+            if (!cacheIsFresh) {
+                try {
+                    const cores = await fetchGpuCoresFromMalioc();
                     setGpuCores(cores);
                     if (cores.length > 0) {
                         setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
                     }
+                    await saveGpuCoresToCache(cores);
+                } catch (error) {
+                    console.error("MaliOC cores fetch failed:", error);
+                    setCoresError("Could not fetch GPU cores. Please enter one manually.");
                 }
-                setIsLoading(false);
-            });
+            }
+
+            setIsLoading(false);
         } catch (e) {
             console.error("Validation error:", e);
             setMaliocError("Unexpected error during MaliOC validation");
@@ -234,6 +286,30 @@ export default function ProfileShader() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "An unknown error occurred.";
       await showToast({ style: Toast.Style.Failure, title: "MaliOC Failed", message });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleRefreshCores() {
+    if (maliocValid !== true) {
+      await showToast({ style: Toast.Style.Failure, title: "MaliOC Not Valid", message: "Cannot refresh cores until MaliOC path is valid." });
+      return;
+    }
+    setIsLoading(true);
+    setCoresError(undefined);
+    try {
+      const cores = await fetchGpuCoresFromMalioc();
+      setGpuCores(cores);
+      if (cores.length > 0) {
+        setGpuCore(cores.find((c) => c.id === "G57")?.id ?? cores[0].id);
+      }
+      await saveGpuCoresToCache(cores);
+      await showToast({ style: Toast.Style.Success, title: "GPU Cores Updated", message: `Loaded ${cores.length} cores` });
+    } catch (error) {
+      console.error("Manual refresh failed:", error);
+      setCoresError("Could not fetch GPU cores. Please enter one manually.");
+      await showToast({ style: Toast.Style.Failure, title: "Failed to Refresh Cores" });
     } finally {
       setIsLoading(false);
     }
@@ -268,6 +344,7 @@ export default function ProfileShader() {
         maliocValid === true ? (
           <ActionPanel>
             <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
+            <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
           </ActionPanel>
         ) : (
           <ActionPanel>
@@ -429,7 +506,7 @@ function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShad
 ---
 
 ## Performance Metrics
-| Metric                      | ${headerRow} | Bound       |
+| Metric                      | ${headerRow}    | Bound       |
 | --------------------------- | ${separatorRow} | ----------- |
 ${perfRow("Total", variant.performance.total_cycles)}
 ${perfRow("Shortest path", variant.performance.shortest_path_cycles)}
