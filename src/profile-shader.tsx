@@ -345,10 +345,10 @@ export default function ProfileShader() {
       if (detected) {
         setShaderType(detected);
       } else {
-        await showToast({ style: Toast.Style.Failure, title: "Не удалось определить тип шейдера", message: "Выберите тип вручную" });
+        await showToast({ style: Toast.Style.Failure, title: "Failed to detect shader type", message: "Choose shader type manually" });
       }
     } catch (e) {
-      await showToast({ style: Toast.Style.Failure, title: "Не удалось получить выделенный текст", message: "Выделите код шейдера и повторите" });
+      await showToast({ style: Toast.Style.Failure, title: "Failed to get selected text", message: "Select shader text and try again" });
     }
   }
 
@@ -365,7 +365,7 @@ export default function ProfileShader() {
       return;
     }
     if (shaderType === "unset") {
-      await showToast({ style: Toast.Style.Failure, title: "Select Shader Type", message: "Выберите тип шейдера или используйте Detect Shader Type" });
+      await showToast({ style: Toast.Style.Failure, title: "Select Shader Type", message: "Choose shader type manually or use Detect Shader Type" });
       setIsLoading(false);
       return;
     }
@@ -618,14 +618,20 @@ function formatJsonReport(data: MaliJsonOutput): string {
   }
 
   const performanceReport = data as MaliPerformanceReport;
-  const shader = performanceReport.shaders[0];
-
-  // Handle case where compilation succeeded but no variants (shouldn't happen normally)
-  if (!shader.variants || shader.variants.length === 0) {
-    return formatBasicInfo(performanceReport, shader);
+  if (!performanceReport.shaders || performanceReport.shaders.length === 0) {
+    return `# MaliOC Report\n\nNo shaders found in report.`;
   }
 
-  return formatPerformanceReport(performanceReport, shader);
+  // Render all shaders found in the report (usually 1)
+  const parts = performanceReport.shaders.map((shader, idx) => {
+    // If no variants – still show basic info
+    if (!shader.variants || shader.variants.length === 0) {
+      return formatBasicInfo(performanceReport, shader);
+    }
+    return formatPerformanceReport(performanceReport, shader);
+  });
+
+  return parts.join("\n\n---\n\n");
 }
 
 function formatErrorReport(report: MaliErrorReport, shader: MaliShaderInfo & { errors: string[] }): string {
@@ -669,44 +675,72 @@ ${shader.notes.map(note => `- ${note}`).join('\n')}
 }
 
 function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShaderInfo): string {
-  const variant = shader.variants[0]; // For now, handle first variant
-  const pipelines = variant.performance.pipelines;
   const hardwarePipelines = shader.hardware.pipelines || [];
-
-  // Helper to get property value
-  const getProp = (name: string) => variant.properties.find(p => p.name === name)?.value ?? "N/A";
 
   // Helper to get pipeline display name
   const getPipelineDisplayName = (pipelineName: string) => {
-    const hwPipeline = hardwarePipelines.find(p => p.name === pipelineName);
+    const hwPipeline = hardwarePipelines.find((p) => p.name === pipelineName);
     return hwPipeline?.display_name || pipelineName;
   };
 
   // Helper to format numbers with reasonable precision
   const formatNumber = (value: number | string | boolean): string => {
     if (typeof value === "number") {
-      // Round to 3 decimal places for readability
       return Number(value.toFixed(3)).toString();
     }
     return String(value);
   };
 
-  // Helper to format performance table row
-  const perfRow = (title: string, cost: MaliShaderCost) => {
-    const cycles = pipelines.map((_, i) => {
-      const count = cost.cycle_count[i];
-      return count !== null ? formatNumber(count) : "N/A";
-    }).map(s => s.padStart(8));
+  // Helper to format cost rows
+  const perfRow = (title: string, pipelines: string[], cost: MaliShaderCost) => {
+    const cycles = pipelines
+      .map((_, i) => {
+        const count = cost.cycle_count[i];
+        return count !== null ? formatNumber(count) : "N/A";
+      })
+      .map((s) => s.padStart(8));
 
-    const boundPipeline = cost.bound_pipelines[0];
-    const boundDisplayName = boundPipeline ? getPipelineDisplayName(boundPipeline) : "N/A";
+    const boundDisplay = (cost.bound_pipelines || [])
+      .filter((bp): bp is string => !!bp)
+      .map((bp) => getPipelineDisplayName(bp))
+      .join(", ") || "N/A";
 
-    return `| ${title.padEnd(25)} | ${cycles.join(' | ')} | ${boundDisplayName} |`;
+    return `| ${title.padEnd(25)} | ${cycles.join(" | ")} | ${boundDisplay} |`;
   };
 
-  // Create table header with pipeline names
-  const headerRow = pipelines.map(name => getPipelineDisplayName(name).padStart(8)).join(' | ');
-  const separatorRow = pipelines.map(() => '--------').join(' | ');
+  // Format all top-level shader properties
+  const shaderPropsSection = shader.properties && shader.properties.length > 0
+    ? `## Shader Properties\n${shader.properties
+        .map((p) => `- **${p.display_name}**: \`${formatNumber(p.value)}\``)
+        .join("\n")}\n\n`
+    : "";
+
+  // Format each variant in detail
+  const variantsSections = shader.variants
+    .map((variant) => {
+      const pipelines = variant.performance.pipelines;
+      const headerRow = pipelines.map((name) => getPipelineDisplayName(name).padStart(8)).join(" | ");
+      const separatorRow = pipelines.map(() => "--------").join(" | ");
+
+      // Variant properties as a compact bullet list (all properties available)
+      const variantProps = (variant.properties || [])
+        .map((p) => `- ${p.display_name}: \`${formatNumber(p.value)}\``)
+        .join("\n");
+
+      return `### Variant: ${variant.name}
+
+#### Resource Usage
+${variantProps}
+
+#### Performance Metrics
+| Metric                      | ${headerRow}    | Bound       |
+| --------------------------- | ${separatorRow} | ----------- |
+${perfRow("Total", pipelines, variant.performance.total_cycles)}
+${perfRow("Shortest", pipelines, variant.performance.shortest_path_cycles)}
+${perfRow("Longest", pipelines, variant.performance.longest_path_cycles)}
+`;
+    })
+    .join("\n");
 
   return `
 # MaliOC Report: ${shader.hardware.core}
@@ -716,31 +750,18 @@ function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShad
 - **Driver:** ${shader.driver}
 - **Shader:** ${shader.shader.api} ${shader.shader.type}
 
----
+${shaderPropsSection}## Variants
 
-## Resource Usage (${variant.name})
-- **Work Registers:** ${formatNumber(getProp("work_registers_used"))}
-- **Uniform Registers:** ${formatNumber(getProp("uniform_registers_used"))}
-- **Stack Spilling:** ${String(getProp("has_stack_spilling"))}${getProp("stack_spill_bytes") !== "N/A" && Number(getProp("stack_spill_bytes")) > 0 ? ` (${formatNumber(getProp("stack_spill_bytes"))} bytes)` : ''}
-- **16-bit Arithmetic:** ${formatNumber(getProp("fp16_arithmetic"))}%
-
----
-
-## Performance Metrics
-| Metric                      | ${headerRow}    | Bound       |
-| --------------------------- | ${separatorRow} | ----------- |
-${perfRow("Total", variant.performance.total_cycles)}
-${perfRow("Shortest path", variant.performance.shortest_path_cycles)}
-${perfRow("Longest path", variant.performance.longest_path_cycles)}
+${variantsSections}
 
 ${shader.warnings.length > 0 ? `## Warnings
-${shader.warnings.map(warning => `⚠️ ${warning}`).join('\n')}
+${shader.warnings.map((warning) => `⚠️ ${warning}`).join("\n")}
 
-` : ''}${shader.notes.length > 0 ? `## Notes
-${shader.notes.map(note => `ℹ️ ${note}`).join('\n')}
+` : ""}${shader.notes.length > 0 ? `## Notes
+${shader.notes.map((note) => `ℹ️ ${note}`).join("\n")}
 
-` : ''}${shader.attribute_streams ? formatAttributeStreams(shader.attribute_streams) : ''}---
-*${report.producer.name} v${report.producer.version.join('.')} (Build ${report.producer.build})*
+` : ""}${shader.attribute_streams ? formatAttributeStreams(shader.attribute_streams) : ""}---
+*${report.producer.name} v${report.producer.version.join(".")} (Build ${report.producer.build})*
 `;
 }
 
