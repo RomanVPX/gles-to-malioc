@@ -446,7 +446,7 @@ export default function ProfileShader() {
                 <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
               )}
               <Action title="Detect Shader Type" onAction={handleDetectShaderType} />
-              <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} />
+              <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} shortcut={{ modifiers: ["cmd"], key: "d" }}/>
               <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
             </>
           ) : (
@@ -523,13 +523,13 @@ function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
           actions={
             <ActionPanel>
               <Action.CopyToClipboard title="Copy Markdown Report" content={markdown} />
-              <Action.CopyToClipboard title="Copy Raw JSON" content={output} />
               <Action
                 title="Save Markdown Report"
                 onAction={async () => {
                   await saveFile(`${baseName}.md`, markdown);
                 }}
               />
+              <Action.CopyToClipboard title="Copy Raw JSON" content={output} />
               <Action
                 title="Save Raw JSON"
                 onAction={async () => {

@@ -5,7 +5,19 @@
   "description": "Compiles selected shader code with MaliOC and gives you stats.",
   "icon": "extension-icon.png",
   "author": "RomanVPX",
+  "categories": [
+    "Developer Tools",
+    "Productivity"
+  ],
   "license": "MIT",
+  "commands": [
+    {
+      "name": "profile-shader",
+      "title": "Profile Shader with MaliOC",
+      "description": "Compiles selected GLES shader code with MaliOC and shows performance stats.",
+      "mode": "view"
+    }
+  ],
   "preferences": [
     {
       "name": "pathToMaliOC",
@@ -31,14 +43,6 @@
       "type": "directory",
       "default": "~/Downloads",
       "required": false
-    }
-  ],
-  "commands": [
-    {
-      "name": "profile-shader",
-      "title": "Profile Shader with MaliOC",
-      "description": "Compiles selected GLES shader code with MaliOC and shows performance stats.",
-      "mode": "view"
     }
   ],
   "dependencies": {
