@@ -439,22 +439,22 @@ export default function ProfileShader() {
     <Form
       isLoading={isLoading}
       actions={
-        maliocValid === true ? (
-          <ActionPanel>
-            {shaderType !== "unset" ? (
-              <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
-            ) : (
+        <ActionPanel>
+          {maliocValid ? (
+            <>
+              {shaderType !== "unset" && (
+                <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
+              )}
               <Action title="Detect Shader Type" onAction={handleDetectShaderType} />
-            )}
-            <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
-            <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} />
-          </ActionPanel>
-        ) : (
-          <ActionPanel>
+              <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} />
+              <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
+            </>
+          ) : (
             <Action title="Validating MaliOC..." onAction={() => {}} />
-          </ActionPanel>
-        )
+          )}
+        </ActionPanel>
       }
+
     >
       <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={(val) => {
         const v = val as ShaderType;
@@ -797,19 +797,9 @@ async function processShader(content: string, type: string, core: string, mode: 
 
   const lines = processedContent.split('\n');
 
-  // Logic from the bash script, translated to TS
-  if (lines[0].trim().startsWith("#ifdef VERTEX")) {
-    if (type === 'auto') detectedType = 'vertex';
-    lines.shift();
-  } else if (lines[0].trim().startsWith("#ifdef FRAGMENT")) {
-    if (type === 'auto') detectedType = 'fragment';
+  if (lines[0].trim().startsWith("#ifdef VERTEX") || lines[0].trim().startsWith("#ifdef FRAGMENT")) {
     lines.shift();
   }
-
-  if (detectedType === 'auto') {
-      throw new Error("Auto-detection failed: #ifdef VERTEX/FRAGMENT not found. Please select type manually.");
-  }
-
   if (lines[lines.length - 1].trim() === "#endif") {
     lines.pop();
   }
@@ -825,7 +815,6 @@ async function processShader(content: string, type: string, core: string, mode: 
   const tempPath = join(tmpdir(), `shader_${Date.now()}.glsl`);
   await writeFile(tempPath, processedContent);
   const formatFlag = mode === "json" ? "--format json" : "";
-  // Pass the core as-is (full name, e.g., "Mali-G57" or "Immortalis-G720")
   const command = `${MALIOC_PATH} ${formatFlag} --${detectedType} --core "${core}" "${tempPath}"`;
 
   console.log("Executing command:", command);
