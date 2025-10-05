@@ -11,7 +11,7 @@ import {
   Color,
 } from "@raycast/api";
 import { parseCompiledShader, variantsToListItems } from "./lib/shader-parser";
-import { ResultView, getDefaultGpuCore, processShader } from "./profile-shader";
+import { ResultView, getDefaultGpuCore, processShader, getAvailableGpuCores, type GpuCore } from "./profile-shader";
 
 type ShaderTypeFilter = "all" | "vertex" | "fragment";
 
@@ -64,12 +64,23 @@ export default function SelectShaderVariant() {
   const [shaderContent, setShaderContent] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [defaultGpuCore, setDefaultGpuCore] = useState<string | null>(null);
+  const [sessionGpuCore, setSessionGpuCore] = useState<string | null>(null); // Session-specific core
 
   // Generate unique launch ID to detect new command launches
   const [launchId] = useState(() => Date.now());
   const fetchedLaunchIdRef = useRef<number | null>(null);
 
   const { push } = useNavigation();
+
+  // Load default GPU core on mount
+  useEffect(() => {
+    async function loadDefaultCore() {
+      const core = await getDefaultGpuCore();
+      setDefaultGpuCore(core);
+    }
+    loadDefaultCore();
+  }, []);
 
   useEffect(() => {
     // Skip if already fetched for this launch
@@ -189,14 +200,14 @@ export default function SelectShaderVariant() {
     try {
       await showToast({ style: Toast.Style.Animated, title: "Profiling shader..." });
 
-      // Get default GPU core
-      const defaultCore = await getDefaultGpuCore();
-      if (!defaultCore) {
-        throw new Error("No default GPU core set. Please run 'Profile Shader' command first to set one.");
+      // Use session core if set, otherwise use default
+      const coreToUse = sessionGpuCore || defaultGpuCore;
+      if (!coreToUse) {
+        throw new Error("No GPU core selected. Please select a core or set a default in 'Profile Shader' command.");
       }
 
       // Process shader
-      const output = await processShader(code, type, defaultCore, "json");
+      const output = await processShader(code, type, coreToUse, "json");
 
       // Show result in ResultView with json mode
       push(<ResultView output={output} mode="json" />);
@@ -215,11 +226,16 @@ export default function SelectShaderVariant() {
     }
   }
 
+  // Build navigation title with session core indicator
+  const navTitle = sessionGpuCore
+    ? `Shader Variants (${filteredItems.length}) · Session: ${sessionGpuCore}`
+    : `Shader Variants (${filteredItems.length})`;
+
   return (
     <List
       isLoading={isLoading}
       searchBarPlaceholder="Filter shader variants..."
-      navigationTitle={`Shader Variants (${filteredItems.length})`}
+      navigationTitle={navTitle}
       searchBarAccessory={
         <List.Dropdown
           tooltip="Filter by Shader Type"
@@ -379,10 +395,12 @@ export default function SelectShaderVariant() {
                 : subtitleText;
 
               // Determine icon and color based on shader type
-              const shaderIcon = item.type === "vertex" 
+              const shaderIcon = item.type === "vertex"
                 ? { source: "vertex.svg", tintColor: VERTEX_SHADER_COLOR }
                 : { source: "fragment.svg", tintColor: FRAGMENT_SHADER_COLOR };
               const shaderTooltip = item.type === "vertex" ? "Vertex Shader" : "Fragment Shader";
+
+              const currentCore = sessionGpuCore || defaultGpuCore;
 
               return (
                 <List.Item
@@ -395,10 +413,16 @@ export default function SelectShaderVariant() {
                   actions={
                     <ActionPanel>
                       <Action
-                        title="Profile with MaliOC"
+                        title={currentCore ? `Compile for ${currentCore}` : "Compile with MaliOC"}
                         onAction={() => handleProfileShader(item.code, item.type)}
                       />
                       <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
+                      <Action
+                        title="Select GPU Core for Session"
+                        icon={Icon.ComputerChip}
+                        onAction={() => push(<SelectGpuCoreView onSelect={setSessionGpuCore} currentCore={currentCore} />)}
+                        shortcut={{ modifiers: ["cmd"], key: "g" }}
+                      />
                       <Action
                         title="Reload Shader Content"
                         icon={Icon.ArrowClockwise}
@@ -414,6 +438,78 @@ export default function SelectShaderVariant() {
           );
         })
       )}
+    </List>
+  );
+}
+
+// --- GPU Core Selection View ---
+function SelectGpuCoreView({
+  onSelect,
+  currentCore,
+}: {
+  onSelect: (core: string) => void;
+  currentCore: string | null;
+}) {
+  const [cores, setCores] = useState<GpuCore[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const { pop } = useNavigation();
+
+  useEffect(() => {
+    async function loadCores() {
+      try {
+        setIsLoading(true);
+        const availableCores = await getAvailableGpuCores();
+        setCores(availableCores);
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadCores();
+  }, []);
+
+  if (error) {
+    return (
+      <List>
+        <List.EmptyView
+          title="Failed to Load GPU Cores"
+          description={error.message}
+        />
+      </List>
+    );
+  }
+
+  return (
+    <List isLoading={isLoading} navigationTitle="Select GPU Core for Session">
+      {cores.map((core) => (
+        <List.Item
+          key={core.id}
+          title={core.name}
+          icon={currentCore === core.id ? Icon.CheckCircle : Icon.Circle}
+          accessories={[
+            currentCore === core.id ? { tag: { value: "Current", color: Color.Green } } : {},
+          ]}
+          actions={
+            <ActionPanel>
+              <Action
+                title="Select This Core"
+                icon={Icon.CheckCircle}
+                onAction={() => {
+                  onSelect(core.id);
+                  showToast({
+                    style: Toast.Style.Success,
+                    title: "GPU Core Selected",
+                    message: `Session will use ${core.name}`,
+                  });
+                  pop();
+                }}
+              />
+            </ActionPanel>
+          }
+        />
+      ))}
     </List>
   );
 }

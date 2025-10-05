@@ -133,7 +133,7 @@ interface MaliErrorReport extends MaliReportBase {
 // Union type for all possible reports
 type MaliJsonOutput = MaliPerformanceReport | MaliErrorReport;
 
-interface GpuCore {
+export interface GpuCore {
   id: string;
   name: string;
 }
@@ -156,6 +156,22 @@ export async function getDefaultGpuCore(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Get list of available GPU cores (uses cache with 24h TTL)
+ */
+export async function getAvailableGpuCores(): Promise<GpuCore[]> {
+  // Try cache first
+  const cached = await loadGpuCoresFromCache();
+  if (cached && isCacheFresh(cached.timestamp)) {
+    return cached.cores;
+  }
+
+  // Fetch fresh data
+  const cores = await fetchGpuCoresFromMalioc();
+  await saveGpuCoresToCache(cores);
+  return cores;
 }
 
 async function setDefaultGpuCoreLocal(coreId: string): Promise<void> {
