@@ -11,6 +11,10 @@ export interface ParsedShaderVariant {
   tier?: string;
   /** API version, e.g., "gles3" */
   api?: string;
+  /** Pass index (0-based) */
+  passIndex?: number;
+  /** Pass name (if present in shader) */
+  passName?: string;
   /** Vertex shader code (between #ifdef VERTEX and #endif), if present */
   vertexCode?: string;
   /** Fragment shader code (between #ifdef FRAGMENT and #endif), if present */

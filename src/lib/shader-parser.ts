@@ -3,12 +3,66 @@ import { ParsedShaderVariant } from "./types";
 // Set to true to enable detailed parsing logs
 const DEBUG = true;
 
+interface PassInfo {
+  index: number;
+  name?: string;
+  startLine: number;
+}
+
+/**
+ * Extract all passes from the shader content with their names and line numbers
+ */
+function extractPasses(content: string): PassInfo[] {
+  const passes: PassInfo[] = [];
+  const lines = content.split("\n");
+  let passIndex = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Look for " Pass {" pattern
+    if (/^\s*Pass\s*\{/.test(line)) {
+      const passInfo: PassInfo = {
+        index: passIndex,
+        startLine: i,
+      };
+
+      // Check next few lines for "Name" declaration
+      for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        const nameMatch = nextLine.match(/^Name\s+"([^"]+)"/);
+        if (nameMatch) {
+          passInfo.name = nameMatch[1];
+          break;
+        }
+        // Stop if we hit the compiled programs section or another Pass
+        if (nextLine.includes("Compiled programs") || /^Pass\s*\{/.test(nextLine)) {
+          break;
+        }
+      }
+
+      passes.push(passInfo);
+      passIndex++;
+    }
+  }
+
+  return passes;
+}
+
 /**
  * Parse a compiled shader file (Unity shader disassembly format)
  * into individual variants with their vertex and fragment code.
  */
 export function parseCompiledShader(content: string): ParsedShaderVariant[] {
   const variants: ParsedShaderVariant[] = [];
+
+  // First, extract all passes with their info
+  const passes = extractPasses(content);
+  
+  if (DEBUG && passes.length > 0) {
+    console.log(`[Parser] Found ${passes.length} pass(es):`, 
+      passes.map(p => `Pass ${p.index}${p.name ? `: "${p.name}"` : ""}`).join(", "));
+  }
 
   // Split by the separator line (multiple slashes) but keep track of line numbers
   const allLines = content.split("\n");
@@ -23,7 +77,9 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
     if (/^\/{50,}$/.test(line)) {
       // Process accumulated block
       if (currentBlock.trim()) {
-        const variant = parseVariantBlock(currentBlock, blockStartLine);
+        // Find which pass this block belongs to
+        const passInfo = findPassForLine(passes, blockStartLine);
+        const variant = parseVariantBlock(currentBlock, blockStartLine, passInfo);
         if (variant && (variant.vertexCode || variant.fragmentCode)) {
           variants.push(variant);
         }
@@ -38,7 +94,8 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
 
   // Process last block
   if (currentBlock.trim()) {
-    const variant = parseVariantBlock(currentBlock, blockStartLine);
+    const passInfo = findPassForLine(passes, blockStartLine);
+    const variant = parseVariantBlock(currentBlock, blockStartLine, passInfo);
     if (variant && (variant.vertexCode || variant.fragmentCode)) {
       variants.push(variant);
     }
@@ -55,7 +112,24 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
   return variants;
 }
 
-function parseVariantBlock(block: string, blockStartLine: number): ParsedShaderVariant | null {
+/**
+ * Find which pass a given line belongs to
+ */
+function findPassForLine(passes: PassInfo[], lineNumber: number): PassInfo | undefined {
+  // Find the last pass that starts before or at this line
+  for (let i = passes.length - 1; i >= 0; i--) {
+    if (passes[i].startLine <= lineNumber) {
+      return passes[i];
+    }
+  }
+  return undefined;
+}
+
+function parseVariantBlock(
+  block: string, 
+  blockStartLine: number, 
+  passInfo?: PassInfo
+): ParsedShaderVariant | null {
   const lines = block.split("\n");
 
   // Extract keywords
@@ -103,15 +177,13 @@ function parseVariantBlock(block: string, blockStartLine: number): ParsedShaderV
     return null;
   }
 
-  // Generate unique ID
-  const keywordsKey = keywords.join("_").replace(/[<>]/g, "");
-  const id = `${keywordsKey}_${tier || "unknown"}_${Math.random().toString(36).substr(2, 9)}`;
-
   return {
-    id,
+    id: `variant_${blockStartLine}_${keywords.join("_")}`,
     keywords,
     tier,
     api,
+    passIndex: passInfo?.index,
+    passName: passInfo?.name,
     vertexCode: vertexResult?.code,
     fragmentCode: fragmentResult?.code,
     vertexLineNumber: vertexResult?.versionLine,
@@ -217,6 +289,8 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
   keywordsDisplay: string;
   tier?: string;
   api?: string;
+  passIndex?: number;
+  passName?: string;
   lineNumber?: number;
 }> {
   const items: Array<{
@@ -228,6 +302,8 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
     keywordsDisplay: string;
     tier?: string;
     api?: string;
+    passIndex?: number;
+    passName?: string;
     lineNumber?: number;
   }> = [];
 
@@ -240,6 +316,16 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
   }
   // Only show tier if there are multiple different tiers
   const shouldShowTier = uniqueTiers.size > 1;
+
+  // Collect unique pass indices to decide if we should show pass info
+  const uniquePassIndices = new Set<number>();
+  for (const variant of variants) {
+    if (variant.passIndex !== undefined) {
+      uniquePassIndices.add(variant.passIndex);
+    }
+  }
+  // Only show pass if there are multiple passes
+  const shouldShowPass = uniquePassIndices.size > 1;
 
   for (const variant of variants) {
     const keywordsDisplay = variant.keywords.join(" ");
@@ -254,6 +340,8 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
         keywordsDisplay,
         tier: shouldShowTier ? variant.tier : undefined,
         api: variant.api,
+        passIndex: shouldShowPass ? variant.passIndex : undefined,
+        passName: shouldShowPass ? variant.passName : undefined,
         lineNumber: variant.vertexLineNumber,
       });
     }
@@ -268,6 +356,8 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
         keywordsDisplay,
         tier: shouldShowTier ? variant.tier : undefined,
         api: variant.api,
+        passIndex: shouldShowPass ? variant.passIndex : undefined,
+        passName: shouldShowPass ? variant.passName : undefined,
         lineNumber: variant.fragmentLineNumber,
       });
     }

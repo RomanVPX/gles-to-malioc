@@ -15,6 +15,11 @@ import { ResultView, getDefaultGpuCore, processShader } from "./profile-shader";
 
 type ShaderTypeFilter = "all" | "vertex" | "fragment";
 
+// Maximum total character count for displayed keywords in tags
+const MAX_KEYWORDS_DISPLAY_LENGTH = 55;
+// Maximum total character count for section title keywords
+const MAX_SECTION_TITLE_LENGTH = 80;
+
 /**
  * Generate a deterministic color for a keyword using a simple hash
  */
@@ -225,20 +230,97 @@ export default function SelectShaderVariant() {
           }
         />
       ) : (
-        Array.from(groupedByKeywords.entries()).map(([keywordsKey, groupItems]) => (
-          <List.Section key={keywordsKey} title={`Keywords: ${keywordsKey}`}>
+        Array.from(groupedByKeywords.entries()).map(([keywordsKey, groupItems]) => {
+          // Build smart section title with keyword limit
+          const keywords = keywordsKey.split(" ");
+          let sectionTitle = "KW: ";
+          let totalLength = 0;
+          let displayedCount = 0;
+          const displayedKeywords: string[] = [];
+
+          for (const keyword of keywords) {
+            if (totalLength + keyword.length <= MAX_SECTION_TITLE_LENGTH) {
+              displayedKeywords.push(keyword);
+              totalLength += keyword.length;
+              displayedCount++;
+            } else {
+              break;
+            }
+          }
+
+          sectionTitle += displayedKeywords.join(", ");
+          const remainingCount = keywords.length - displayedCount;
+          let sectionSubtitle: string | undefined = undefined;
+
+          if (remainingCount > 0) {
+            sectionTitle += " ...";
+            // Show remaining count in subtitle
+            sectionSubtitle = `+ ${remainingCount}`;
+          }
+
+          return (
+          <List.Section key={keywordsKey} title={sectionTitle} subtitle={sectionSubtitle}>
             {groupItems.map((item) => {
               // Build accessories: keyword tags first, then shader type at the end (rightmost)
               const accessories: List.Item.Accessory[] = [];
 
               // Add keyword tags first (skip <none>)
               if (item.keywords.length > 0 && item.keywords[0] !== "<none>") {
-                item.keywords.forEach((keyword) => {
+                const allKeywords = item.keywords.join(", ");
+                let totalLength = 0;
+                let displayedCount = 0;
+                const displayedKeywords: Array<{ keyword: string; color: Color }> = [];
+
+                // Show keywords from the end (reverse order) while total length doesn't exceed limit
+                for (let i = item.keywords.length - 1; i >= 0; i--) {
+                  const keyword = item.keywords[i];
+                  if (totalLength + keyword.length <= MAX_KEYWORDS_DISPLAY_LENGTH) {
+                    displayedKeywords.unshift({
+                      keyword,
+                      color: getKeywordColor(keyword),
+                    });
+                    totalLength += keyword.length;
+                    displayedCount++;
+                  } else {
+                    // Check if we can show truncated version
+                    const remainingSpace = MAX_KEYWORDS_DISPLAY_LENGTH - totalLength;
+                    const minSpace = MAX_KEYWORDS_DISPLAY_LENGTH * 0.1;
+                    const halfKeyword = keyword.length / 2;
+
+                    if (remainingSpace > minSpace && remainingSpace >= halfKeyword) {
+                      // Truncate keyword: take last (remainingSpace - 1) chars and add ellipsis
+                      const charsToShow = remainingSpace - 1; // -1 for ellipsis
+                      const truncated = "…" + keyword.slice(-charsToShow);
+                      displayedKeywords.unshift({
+                        keyword: truncated,
+                        color: getKeywordColor(keyword), // Use original keyword for color consistency
+                      });
+                      displayedCount++;
+                    }
+                    break;
+                  }
+                }
+
+                // If there are more keywords that didn't fit, show "+ n" first
+                const remainingCount = item.keywords.length - displayedCount;
+                if (remainingCount > 0) {
+                  accessories.push({
+                    tag: {
+                      value: `+ ${remainingCount}`,
+                      color: Color.SecondaryText,
+                    },
+                    tooltip: allKeywords,
+                  });
+                }
+
+                // Add displayed keywords
+                displayedKeywords.forEach(({ keyword, color }) => {
                   accessories.push({
                     tag: {
                       value: keyword,
-                      color: getKeywordColor(keyword),
+                      color,
                     },
+                    tooltip: allKeywords,
                   });
                 });
               }
@@ -246,11 +328,43 @@ export default function SelectShaderVariant() {
               // Add shader type (VERT/FRAG) at the end - it will be rightmost
               accessories.push({ text: item.shaderTypeShort });
 
+              // Build subtitle: tier + pass info (short form)
+              const subtitleParts: string[] = [];
+              const tooltipParts: string[] = [];
+
+              if (item.tier) {
+                // Extract tier number from "Tier 1" -> "1"
+                const tierMatch = item.tier.match(/\d+/);
+                const tierNum = tierMatch ? tierMatch[0] : item.tier;
+                subtitleParts.push(`T${tierNum}`);
+                tooltipParts.push(item.tier); // Full: "Tier 1"
+              }
+
+              if (item.passIndex !== undefined) {
+                subtitleParts.push(`P${item.passIndex}`);
+                // Full: "Pass 0: "name"" or "Pass 0: [unnamed]"
+                const passTooltip = item.passName
+                  ? `Pass ${item.passIndex}: "${item.passName}"`
+                  : `Pass ${item.passIndex}: [unnamed]`;
+                tooltipParts.push(passTooltip);
+              }
+
+              // Create subtitle with tooltip
+              const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : undefined;
+              const tooltipText = tooltipParts.length > 0 ? tooltipParts.join("  •  ") : undefined;
+
+              const subtitle = tooltipText && subtitleText
+                ? {
+                    value: subtitleText,
+                    tooltip: tooltipText,
+                  }
+                : subtitleText;
+
               return (
                 <List.Item
                   key={item.id}
                   title={item.lineNumber ? `Ln ${item.lineNumber}` : "Unknown Line"}
-                  subtitle={item.tier ? `${item.tier}` : undefined}
+                  subtitle={subtitle}
                   keywords={[item.type, ...item.keywords]}
                   accessories={accessories}
                   actions={
@@ -272,7 +386,8 @@ export default function SelectShaderVariant() {
               );
             })}
           </List.Section>
-        ))
+          );
+        })
       )}
     </List>
   );
