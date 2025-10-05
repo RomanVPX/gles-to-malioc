@@ -16,6 +16,12 @@
       "title": "Profile Shader with MaliOC",
       "description": "Compiles selected GLES shader code with MaliOC and shows performance stats.",
       "mode": "view"
+    },
+    {
+      "name": "select-shader-variant",
+      "title": "Select Shader Variant to Profile",
+      "description": "Parse compiled shader file and select a variant to profile with MaliOC.",
+      "mode": "view"
     }
   ],
   "preferences": [

@@ -138,7 +138,7 @@ interface GpuCore {
   name: string;
 }
 
-type OutputMode = "text" | "json";
+export type OutputMode = "text" | "json";
 
 // --- GPU Cores Cache (LocalStorage) ---
 const GPU_CORES_CACHE_KEY = "gpu_cores_cache";
@@ -149,7 +149,7 @@ type GpuCoresCache = { cores: GpuCore[]; timestamp: number };
 // --- Default GPU Core (LocalStorage) ---
 const DEFAULT_GPU_CORE_KEY = "default_gpu_core";
 
-async function getDefaultGpuCore(): Promise<string | null> {
+export async function getDefaultGpuCore(): Promise<string | null> {
   try {
     const val = await LocalStorage.getItem<string>(DEFAULT_GPU_CORE_KEY);
     return val ?? null;
@@ -490,7 +490,7 @@ export default function ProfileShader() {
 }
 
 // --- Result View and Formatting ---
-function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
+export function ResultView({ output, mode }: { output: string; mode: OutputMode }) {
   if (mode === "json") {
     try {
       const jsonData = JSON.parse(output) as MaliJsonOutput;
@@ -791,7 +791,7 @@ function formatAttributeStreams(streams: { position?: MaliVertexAttribute[]; non
 
 
 // --- Core Shader Processing Logic ---
-async function processShader(content: string, type: string, core: string, mode: OutputMode): Promise<string> {
+export async function processShader(content: string, type: string, core: string, mode: OutputMode): Promise<string> {
   let processedContent = content.trim();
   let detectedType = type;
 
