@@ -8,11 +8,35 @@ import {
   Toast,
   useNavigation,
   Icon,
+  Color,
 } from "@raycast/api";
 import { parseCompiledShader, variantsToListItems } from "./lib/shader-parser";
 import { ResultView, getDefaultGpuCore, processShader } from "./profile-shader";
 
 type ShaderTypeFilter = "all" | "vertex" | "fragment";
+
+/**
+ * Generate a deterministic color for a keyword using a simple hash
+ */
+function getKeywordColor(keyword: string): Color {
+  const colors = [
+    Color.Blue,
+    Color.Green,
+    Color.Magenta,
+    Color.Orange,
+    Color.Purple,
+    Color.Red,
+    Color.Yellow,
+  ];
+
+  // Simple hash function for deterministic color assignment
+  let hash = 0;
+  for (let i = 0; i < keyword.length; i++) {
+    hash = keyword.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+}
 
 export default function SelectShaderVariant() {
   const [typeFilter, setTypeFilter] = useState<ShaderTypeFilter>("all");
@@ -203,30 +227,50 @@ export default function SelectShaderVariant() {
       ) : (
         Array.from(groupedByKeywords.entries()).map(([keywordsKey, groupItems]) => (
           <List.Section key={keywordsKey} title={`Keywords: ${keywordsKey}`}>
-            {groupItems.map((item) => (
-              <List.Item
-                key={item.id}
-                title={item.type === "vertex" ? "Vertex Shader" : "Fragment Shader"}
-                subtitle={item.tier ? `${item.tier}` : undefined}
-                keywords={[item.type, ...item.keywords]}
-                accessories={[{ text: item.api ? item.api.toUpperCase() : "" }]}
-                actions={
-                  <ActionPanel>
-                    <Action
-                      title="Profile with MaliOC"
-                      onAction={() => handleProfileShader(item.code, item.type)}
-                    />
-                    <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
-                    <Action
-                      title="Reload Shader Content"
-                      icon={Icon.ArrowClockwise}
-                      onAction={revalidate}
-                      shortcut={{ modifiers: ["cmd"], key: "r" }}
-                    />
-                  </ActionPanel>
-                }
-              />
-            ))}
+            {groupItems.map((item) => {
+              // Build accessories: keyword tags first, then shader type at the end (rightmost)
+              const accessories: List.Item.Accessory[] = [];
+
+              // Add keyword tags first (skip <none>)
+              if (item.keywords.length > 0 && item.keywords[0] !== "<none>") {
+                item.keywords.forEach((keyword) => {
+                  accessories.push({
+                    tag: {
+                      value: keyword,
+                      color: getKeywordColor(keyword),
+                    },
+                  });
+                });
+              }
+
+              // Add shader type (VERT/FRAG) at the end - it will be rightmost
+              accessories.push({ text: item.shaderTypeShort });
+
+              return (
+                <List.Item
+                  key={item.id}
+                  title={item.lineNumber ? `Ln ${item.lineNumber}` : "Unknown Line"}
+                  subtitle={item.tier ? `${item.tier}` : undefined}
+                  keywords={[item.type, ...item.keywords]}
+                  accessories={accessories}
+                  actions={
+                    <ActionPanel>
+                      <Action
+                        title="Profile with MaliOC"
+                        onAction={() => handleProfileShader(item.code, item.type)}
+                      />
+                      <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
+                      <Action
+                        title="Reload Shader Content"
+                        icon={Icon.ArrowClockwise}
+                        onAction={revalidate}
+                        shortcut={{ modifiers: ["cmd"], key: "r" }}
+                      />
+                    </ActionPanel>
+                  }
+                />
+              );
+            })}
           </List.Section>
         ))
       )}

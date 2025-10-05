@@ -10,14 +10,35 @@ const DEBUG = true;
 export function parseCompiledShader(content: string): ParsedShaderVariant[] {
   const variants: ParsedShaderVariant[] = [];
 
-  // Split by the separator line (multiple slashes)
-  const blocks = content.split(/\/{50,}/);
+  // Split by the separator line (multiple slashes) but keep track of line numbers
+  const allLines = content.split("\n");
+  let currentLine = 0;
+  let currentBlock = "";
+  let blockStartLine = 0;
 
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (!block.trim()) continue;
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i];
 
-    const variant = parseVariantBlock(block);
+    // Check if this is a separator line
+    if (/^\/{50,}$/.test(line)) {
+      // Process accumulated block
+      if (currentBlock.trim()) {
+        const variant = parseVariantBlock(currentBlock, blockStartLine);
+        if (variant && (variant.vertexCode || variant.fragmentCode)) {
+          variants.push(variant);
+        }
+      }
+      // Start new block
+      currentBlock = "";
+      blockStartLine = i + 2; // +1 for next line, +1 for 1-indexed
+    } else {
+      currentBlock += line + "\n";
+    }
+  }
+
+  // Process last block
+  if (currentBlock.trim()) {
+    const variant = parseVariantBlock(currentBlock, blockStartLine);
     if (variant && (variant.vertexCode || variant.fragmentCode)) {
       variants.push(variant);
     }
@@ -34,7 +55,7 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
   return variants;
 }
 
-function parseVariantBlock(block: string): ParsedShaderVariant | null {
+function parseVariantBlock(block: string, blockStartLine: number): ParsedShaderVariant | null {
   const lines = block.split("\n");
 
   // Extract keywords
@@ -72,13 +93,13 @@ function parseVariantBlock(block: string): ParsedShaderVariant | null {
     }
   }
 
-  // Extract vertex code
-  const vertexCode = extractShaderCode(block, "VERTEX");
+  // Extract vertex code with line number
+  const vertexResult = extractShaderCodeWithLine(block, "VERTEX", blockStartLine);
 
-  // Extract fragment code
-  const fragmentCode = extractShaderCode(block, "FRAGMENT");
+  // Extract fragment code with line number
+  const fragmentResult = extractShaderCodeWithLine(block, "FRAGMENT", blockStartLine);
 
-  if (!vertexCode && !fragmentCode) {
+  if (!vertexResult && !fragmentResult) {
     return null;
   }
 
@@ -91,16 +112,23 @@ function parseVariantBlock(block: string): ParsedShaderVariant | null {
     keywords,
     tier,
     api,
-    vertexCode,
-    fragmentCode,
+    vertexCode: vertexResult?.code,
+    fragmentCode: fragmentResult?.code,
+    vertexLineNumber: vertexResult?.versionLine,
+    fragmentLineNumber: fragmentResult?.versionLine,
   };
 }
 
 /**
  * Extract shader code between #ifdef SHADER_TYPE and #endif
  * Properly handles nested preprocessor directives (#if/#ifdef/#ifndef/#endif)
+ * Returns code and line number of #version in original file
  */
-function extractShaderCode(block: string, shaderType: "VERTEX" | "FRAGMENT"): string | undefined {
+function extractShaderCodeWithLine(
+  block: string,
+  shaderType: "VERTEX" | "FRAGMENT",
+  blockStartLine: number
+): { code: string; versionLine: number } | undefined {
   const ifdefPattern = new RegExp(`^\\s*#ifdef\\s+${shaderType}\\s*$`, "i");
   const endifPattern = /^\s*#endif\s*$/i;
   // Patterns for nested preprocessor directives
@@ -110,14 +138,17 @@ function extractShaderCode(block: string, shaderType: "VERTEX" | "FRAGMENT"): st
   let inShaderBlock = false;
   let nestingLevel = 0;
   const codeLines: string[] = [];
+  let shaderStartLine = 0; // Line where #ifdef SHADER_TYPE appears
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmedLine = line.trim();
 
     // Check if this is the start of our target shader block
     if (!inShaderBlock && ifdefPattern.test(line)) {
       inShaderBlock = true;
       nestingLevel = 1; // Start counting from 1
+      shaderStartLine = i; // Remember where shader block starts
       continue;
     }
 
@@ -148,11 +179,29 @@ function extractShaderCode(block: string, shaderType: "VERTEX" | "FRAGMENT"): st
     }
   }
 
-  const code = codeLines.join("\n").trim();
-  if (DEBUG && code) {
-    console.log(`[Parser] ${shaderType}: ${code.length} chars`);
+  if (codeLines.length === 0) {
+    return undefined;
   }
-  return code ? code : undefined;
+
+  const code = codeLines.join("\n").trim();
+
+  // Find #version line within extracted code
+  let versionLineOffset = 0;
+  for (let i = 0; i < codeLines.length; i++) {
+    if (codeLines[i].trim().startsWith("#version")) {
+      versionLineOffset = i;
+      break;
+    }
+  }
+
+  // Calculate absolute line number in original file
+  const versionLine = blockStartLine + shaderStartLine + 1 + versionLineOffset;
+
+  if (DEBUG && code) {
+    console.log(`[Parser] ${shaderType}: ${code.length} chars at line ${versionLine}`);
+  }
+
+  return { code, versionLine };
 }
 
 /**
@@ -162,20 +211,24 @@ function extractShaderCode(block: string, shaderType: "VERTEX" | "FRAGMENT"): st
 export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
   id: string;
   type: "vertex" | "fragment";
+  shaderTypeShort: string;
   code: string;
   keywords: string[];
   keywordsDisplay: string;
   tier?: string;
   api?: string;
+  lineNumber?: number;
 }> {
   const items: Array<{
     id: string;
     type: "vertex" | "fragment";
+    shaderTypeShort: string;
     code: string;
     keywords: string[];
     keywordsDisplay: string;
     tier?: string;
     api?: string;
+    lineNumber?: number;
   }> = [];
 
   for (const variant of variants) {
@@ -185,11 +238,13 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
       items.push({
         id: `${variant.id}_vertex`,
         type: "vertex",
+        shaderTypeShort: "VERT",
         code: variant.vertexCode,
         keywords: variant.keywords,
         keywordsDisplay,
         tier: variant.tier,
         api: variant.api,
+        lineNumber: variant.vertexLineNumber,
       });
     }
 
@@ -197,11 +252,13 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
       items.push({
         id: `${variant.id}_fragment`,
         type: "fragment",
+        shaderTypeShort: "FRAG",
         code: variant.fragmentCode,
         keywords: variant.keywords,
         keywordsDisplay,
         tier: variant.tier,
         api: variant.api,
+        lineNumber: variant.fragmentLineNumber,
       });
     }
   }

@@ -15,6 +15,10 @@ export interface ParsedShaderVariant {
   vertexCode?: string;
   /** Fragment shader code (between #ifdef FRAGMENT and #endif), if present */
   fragmentCode?: string;
+  /** Line number of #version in vertex shader (in original file) */
+  vertexLineNumber?: number;
+  /** Line number of #version in fragment shader (in original file) */
+  fragmentLineNumber?: number;
 }
 
 export interface ShaderVariantItem {
