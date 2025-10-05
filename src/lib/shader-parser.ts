@@ -231,6 +231,16 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
     lineNumber?: number;
   }> = [];
 
+  // Collect unique tiers to decide if we should show tier info
+  const uniqueTiers = new Set<string>();
+  for (const variant of variants) {
+    if (variant.tier) {
+      uniqueTiers.add(variant.tier);
+    }
+  }
+  // Only show tier if there are multiple different tiers
+  const shouldShowTier = uniqueTiers.size > 1;
+
   for (const variant of variants) {
     const keywordsDisplay = variant.keywords.join(" ");
 
@@ -242,7 +252,7 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
         code: variant.vertexCode,
         keywords: variant.keywords,
         keywordsDisplay,
-        tier: variant.tier,
+        tier: shouldShowTier ? variant.tier : undefined,
         api: variant.api,
         lineNumber: variant.vertexLineNumber,
       });
@@ -256,7 +266,7 @@ export function variantsToListItems(variants: ParsedShaderVariant[]): Array<{
         code: variant.fragmentCode,
         keywords: variant.keywords,
         keywordsDisplay,
-        tier: variant.tier,
+        tier: shouldShowTier ? variant.tier : undefined,
         api: variant.api,
         lineNumber: variant.fragmentLineNumber,
       });
