@@ -20,6 +20,10 @@ const MAX_KEYWORDS_DISPLAY_LENGTH = 55;
 // Maximum total character count for section title keywords
 const MAX_SECTION_TITLE_LENGTH = 80;
 
+// Shader type icon tint colors
+const VERTEX_SHADER_COLOR = "#0000FF"; // Digital blue
+const FRAGMENT_SHADER_COLOR = "#FF00FF"; // Compilation magenta
+
 const KEYWORD_COLORS = [
   Color.Blue,
   Color.Green,
@@ -340,8 +344,7 @@ export default function SelectShaderVariant() {
                 });
               }
 
-              // Add shader type (VERT/FRAG) at the end - it will be rightmost
-              accessories.push({ text: item.shaderTypeShort });
+              // Shader type is now shown as icon, not in accessories
 
               // Build subtitle: tier + pass info (short form)
               const subtitleParts: string[] = [];
@@ -375,9 +378,16 @@ export default function SelectShaderVariant() {
                   }
                 : subtitleText;
 
+              // Determine icon and color based on shader type
+              const shaderIcon = item.type === "vertex" 
+                ? { source: "vertex.svg", tintColor: VERTEX_SHADER_COLOR }
+                : { source: "fragment.svg", tintColor: FRAGMENT_SHADER_COLOR };
+              const shaderTooltip = item.type === "vertex" ? "Vertex Shader" : "Fragment Shader";
+
               return (
                 <List.Item
                   key={item.id}
+                  icon={{ tooltip: shaderTooltip, value: shaderIcon }}
                   title={item.lineNumber ? `Ln ${item.lineNumber}` : "Unknown Line"}
                   subtitle={subtitle}
                   keywords={[item.type, ...item.keywords]}
