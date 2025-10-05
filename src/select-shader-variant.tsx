@@ -20,27 +20,39 @@ const MAX_KEYWORDS_DISPLAY_LENGTH = 55;
 // Maximum total character count for section title keywords
 const MAX_SECTION_TITLE_LENGTH = 80;
 
-/**
- * Generate a deterministic color for a keyword using a simple hash
- */
-function getKeywordColor(keyword: string): Color {
-  const colors = [
-    Color.Blue,
-    Color.Green,
-    Color.Magenta,
-    Color.Orange,
-    Color.Purple,
-    Color.Red,
-    Color.Yellow,
-  ];
+const KEYWORD_COLORS = [
+  Color.Blue,
+  Color.Green,
+  Color.Magenta,
+  Color.Orange,
+  Color.Purple,
+  Color.Red,
+  Color.Yellow,
+];
 
-  // Simple hash function for deterministic color assignment
-  let hash = 0;
-  for (let i = 0; i < keyword.length; i++) {
-    hash = keyword.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % colors.length;
-  return colors[index];
+/**
+ * Build a color map for keywords based on alphabetical order
+ * This ensures maximum color diversity and deterministic assignment
+ */
+function buildKeywordColorMap(items: ReturnType<typeof variantsToListItems>): Map<string, Color> {
+  // Collect all unique keywords
+  const uniqueKeywords = new Set<string>();
+  items.forEach((item) => {
+    if (item.keywords[0] !== "<none>") {
+      item.keywords.forEach((kw) => uniqueKeywords.add(kw));
+    }
+  });
+
+  // Sort alphabetically for deterministic assignment
+  const sortedKeywords = Array.from(uniqueKeywords).sort();
+
+  // Assign colors round-robin
+  const colorMap = new Map<string, Color>();
+  sortedKeywords.forEach((keyword, index) => {
+    colorMap.set(keyword, KEYWORD_COLORS[index % KEYWORD_COLORS.length]);
+  });
+
+  return colorMap;
 }
 
 export default function SelectShaderVariant() {
@@ -149,6 +161,9 @@ export default function SelectShaderVariant() {
   // Parse shader content
   const variants = parseCompiledShader(shaderContent);
   const items = variantsToListItems(variants);
+
+  // Build color map for keywords
+  const keywordColorMap = buildKeywordColorMap(items);
 
   // Filter by type
   const filteredItems = items.filter((item) => {
@@ -277,7 +292,7 @@ export default function SelectShaderVariant() {
                   if (totalLength + keyword.length <= MAX_KEYWORDS_DISPLAY_LENGTH) {
                     displayedKeywords.unshift({
                       keyword,
-                      color: getKeywordColor(keyword),
+                      color: keywordColorMap.get(keyword) || Color.SecondaryText,
                     });
                     totalLength += keyword.length;
                     displayedCount++;
@@ -293,7 +308,7 @@ export default function SelectShaderVariant() {
                       const truncated = "…" + keyword.slice(-charsToShow);
                       displayedKeywords.unshift({
                         keyword: truncated,
-                        color: getKeywordColor(keyword), // Use original keyword for color consistency
+                        color: keywordColorMap.get(keyword) || Color.SecondaryText, // Use original keyword for color consistency
                       });
                       displayedCount++;
                     }
