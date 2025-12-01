@@ -1,15 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import {
-  List,
-  ActionPanel,
-  Action,
-  getSelectedText,
-  showToast,
-  Toast,
-  useNavigation,
-  Icon,
-  Color,
-} from "@raycast/api";
+import { List, ActionPanel, Action, getSelectedText, showToast, Toast, useNavigation, Icon, Color } from "@raycast/api";
 import { parseCompiledShader, variantsToListItems } from "./lib/shader-parser";
 import { ResultView, getDefaultGpuCore, processShader, getAvailableGpuCores, type GpuCore } from "./compile-shader";
 
@@ -24,15 +14,7 @@ const MAX_SECTION_TITLE_LENGTH = 80;
 const VERTEX_SHADER_COLOR = "#0000FF"; // Digital blue
 const FRAGMENT_SHADER_COLOR = "#FF00FF"; // Compilation magenta
 
-const KEYWORD_COLORS = [
-  Color.Blue,
-  Color.Green,
-  Color.Magenta,
-  Color.Orange,
-  Color.Purple,
-  Color.Red,
-  Color.Yellow,
-];
+const KEYWORD_COLORS = [Color.Blue, Color.Green, Color.Magenta, Color.Orange, Color.Purple, Color.Red, Color.Yellow];
 
 /**
  * Build a color map for keywords based on alphabetical order
@@ -203,7 +185,9 @@ export default function SelectShaderVariant() {
       // Use session core if set, otherwise use default
       const coreToUse = sessionGpuCore || defaultGpuCore;
       if (!coreToUse) {
-        throw new Error("No default GPU core selected. Please select a core with 'Select GPU Core for Session' command or set a default in 'Compile Shader with MaliOC' command.");
+        throw new Error(
+          "No default GPU core selected. Please select a core with 'Select GPU Core for Session' action or set a default GPU core in 'Compile Shader with MaliOC' command.",
+        );
       }
 
       // Process shader
@@ -294,147 +278,151 @@ export default function SelectShaderVariant() {
           }
 
           return (
-          <List.Section key={keywordsKey} title={sectionTitle} subtitle={sectionSubtitle}>
-            {groupItems.map((item) => {
-              // Build accessories: keyword tags first, then shader type at the end (rightmost)
-              const accessories: List.Item.Accessory[] = [];
+            <List.Section key={keywordsKey} title={sectionTitle} subtitle={sectionSubtitle}>
+              {groupItems.map((item) => {
+                // Build accessories: keyword tags first, then shader type at the end (rightmost)
+                const accessories: List.Item.Accessory[] = [];
 
-              // Add keyword tags first (skip <none>)
-              if (item.keywords.length > 0 && item.keywords[0] !== "<none>") {
-                const allKeywords = item.keywords.join(", ");
-                let totalLength = 0;
-                let displayedCount = 0;
-                const displayedKeywords: Array<{ keyword: string; color: Color }> = [];
+                // Add keyword tags first (skip <none>)
+                if (item.keywords.length > 0 && item.keywords[0] !== "<none>") {
+                  const allKeywords = item.keywords.join(", ");
+                  let totalLength = 0;
+                  let displayedCount = 0;
+                  const displayedKeywords: Array<{ keyword: string; color: Color }> = [];
 
-                // Show keywords from the end (reverse order) while total length doesn't exceed limit
-                for (let i = item.keywords.length - 1; i >= 0; i--) {
-                  const keyword = item.keywords[i];
-                  if (totalLength + keyword.length <= MAX_KEYWORDS_DISPLAY_LENGTH) {
-                    displayedKeywords.unshift({
-                      keyword,
-                      color: keywordColorMap.get(keyword) || Color.SecondaryText,
-                    });
-                    totalLength += keyword.length;
-                    displayedCount++;
-                  } else {
-                    // Check if we can show truncated version
-                    const remainingSpace = MAX_KEYWORDS_DISPLAY_LENGTH - totalLength;
-                    const minSpace = MAX_KEYWORDS_DISPLAY_LENGTH * 0.1;
-                    const halfKeyword = keyword.length / 2;
-
-                    if (remainingSpace > minSpace && remainingSpace >= halfKeyword) {
-                      // Truncate keyword: take last (remainingSpace - 1) chars and add ellipsis
-                      const charsToShow = remainingSpace - 1; // -1 for ellipsis
-                      const truncated = "…" + keyword.slice(-charsToShow);
+                  // Show keywords from the end (reverse order) while total length doesn't exceed limit
+                  for (let i = item.keywords.length - 1; i >= 0; i--) {
+                    const keyword = item.keywords[i];
+                    if (totalLength + keyword.length <= MAX_KEYWORDS_DISPLAY_LENGTH) {
                       displayedKeywords.unshift({
-                        keyword: truncated,
-                        color: keywordColorMap.get(keyword) || Color.SecondaryText, // Use original keyword for color consistency
+                        keyword,
+                        color: keywordColorMap.get(keyword) || Color.SecondaryText,
                       });
+                      totalLength += keyword.length;
                       displayedCount++;
+                    } else {
+                      // Check if we can show truncated version
+                      const remainingSpace = MAX_KEYWORDS_DISPLAY_LENGTH - totalLength;
+                      const minSpace = MAX_KEYWORDS_DISPLAY_LENGTH * 0.1;
+                      const halfKeyword = keyword.length / 2;
+
+                      if (remainingSpace > minSpace && remainingSpace >= halfKeyword) {
+                        // Truncate keyword: take last (remainingSpace - 1) chars and add ellipsis
+                        const charsToShow = remainingSpace - 1; // -1 for ellipsis
+                        const truncated = "…" + keyword.slice(-charsToShow);
+                        displayedKeywords.unshift({
+                          keyword: truncated,
+                          color: keywordColorMap.get(keyword) || Color.SecondaryText, // Use original keyword for color consistency
+                        });
+                        displayedCount++;
+                      }
+                      break;
                     }
-                    break;
                   }
-                }
 
-                // If there are more keywords that didn't fit, show "+ n" first
-                const remainingCount = item.keywords.length - displayedCount;
-                if (remainingCount > 0) {
-                  accessories.push({
-                    tag: {
-                      value: `+ ${remainingCount}`,
-                      color: Color.SecondaryText,
-                    },
-                    tooltip: allKeywords,
+                  // If there are more keywords that didn't fit, show "+ n" first
+                  const remainingCount = item.keywords.length - displayedCount;
+                  if (remainingCount > 0) {
+                    accessories.push({
+                      tag: {
+                        value: `+ ${remainingCount}`,
+                        color: Color.SecondaryText,
+                      },
+                      tooltip: allKeywords,
+                    });
+                  }
+
+                  // Add displayed keywords
+                  displayedKeywords.forEach(({ keyword, color }) => {
+                    accessories.push({
+                      tag: {
+                        value: keyword,
+                        color,
+                      },
+                      tooltip: allKeywords,
+                    });
                   });
                 }
 
-                // Add displayed keywords
-                displayedKeywords.forEach(({ keyword, color }) => {
-                  accessories.push({
-                    tag: {
-                      value: keyword,
-                      color,
-                    },
-                    tooltip: allKeywords,
-                  });
-                });
-              }
+                // Shader type is now shown as icon, not in accessories
 
-              // Shader type is now shown as icon, not in accessories
+                // Build subtitle: tier + pass info (short form)
+                const subtitleParts: string[] = [];
+                const tooltipParts: string[] = [];
 
-              // Build subtitle: tier + pass info (short form)
-              const subtitleParts: string[] = [];
-              const tooltipParts: string[] = [];
+                if (item.tier) {
+                  // Extract tier number from "Tier 1" -> "1"
+                  const tierMatch = item.tier.match(/\d+/);
+                  const tierNum = tierMatch ? tierMatch[0] : item.tier;
+                  subtitleParts.push(`T${tierNum}`);
+                  tooltipParts.push(item.tier); // Full: "Tier 1"
+                }
 
-              if (item.tier) {
-                // Extract tier number from "Tier 1" -> "1"
-                const tierMatch = item.tier.match(/\d+/);
-                const tierNum = tierMatch ? tierMatch[0] : item.tier;
-                subtitleParts.push(`T${tierNum}`);
-                tooltipParts.push(item.tier); // Full: "Tier 1"
-              }
+                if (item.passIndex !== undefined) {
+                  subtitleParts.push(`P${item.passIndex}`);
+                  // Full: "Pass 0: "name"" or "Pass 0: [unnamed]"
+                  const passTooltip = item.passName
+                    ? `Pass ${item.passIndex}: "${item.passName}"`
+                    : `Pass ${item.passIndex}: [unnamed]`;
+                  tooltipParts.push(passTooltip);
+                }
 
-              if (item.passIndex !== undefined) {
-                subtitleParts.push(`P${item.passIndex}`);
-                // Full: "Pass 0: "name"" or "Pass 0: [unnamed]"
-                const passTooltip = item.passName
-                  ? `Pass ${item.passIndex}: "${item.passName}"`
-                  : `Pass ${item.passIndex}: [unnamed]`;
-                tooltipParts.push(passTooltip);
-              }
+                // Create subtitle with tooltip
+                const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : undefined;
+                const tooltipText = tooltipParts.length > 0 ? tooltipParts.join("  •  ") : undefined;
 
-              // Create subtitle with tooltip
-              const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : undefined;
-              const tooltipText = tooltipParts.length > 0 ? tooltipParts.join("  •  ") : undefined;
+                const subtitle =
+                  tooltipText && subtitleText
+                    ? {
+                        value: subtitleText,
+                        tooltip: tooltipText,
+                      }
+                    : subtitleText;
 
-              const subtitle = tooltipText && subtitleText
-                ? {
-                    value: subtitleText,
-                    tooltip: tooltipText,
-                  }
-                : subtitleText;
+                // Determine icon and color based on shader type
+                const shaderIcon =
+                  item.type === "vertex"
+                    ? { source: "vertex.svg", tintColor: VERTEX_SHADER_COLOR }
+                    : { source: "fragment.svg", tintColor: FRAGMENT_SHADER_COLOR };
+                const shaderTooltip = item.type === "vertex" ? "Vertex Shader" : "Fragment Shader";
 
-              // Determine icon and color based on shader type
-              const shaderIcon = item.type === "vertex"
-                ? { source: "vertex.svg", tintColor: VERTEX_SHADER_COLOR }
-                : { source: "fragment.svg", tintColor: FRAGMENT_SHADER_COLOR };
-              const shaderTooltip = item.type === "vertex" ? "Vertex Shader" : "Fragment Shader";
+                const currentCore = sessionGpuCore || defaultGpuCore;
 
-              const currentCore = sessionGpuCore || defaultGpuCore;
-
-              return (
-                <List.Item
-                  key={item.id}
-                  icon={{ tooltip: shaderTooltip, value: shaderIcon }}
-                  title={item.lineNumber ? `Ln ${item.lineNumber}` : "Unknown Line"}
-                  subtitle={subtitle}
-                  keywords={[item.type, ...item.keywords]}
-                  accessories={accessories}
-                  actions={
-                    <ActionPanel>
-                      <Action
-                        title={currentCore ? `Compile for ${currentCore}` : "Compile with MaliOC"}
-                        onAction={() => handleCompileShader(item.code, item.type)}
-                      />
-                      <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
-                      <Action
-                        title="Select GPU Core for Session"
-                        icon={Icon.ComputerChip}
-                        onAction={() => push(<SelectGpuCoreView onSelect={setSessionGpuCore} currentCore={currentCore} />)}
-                        shortcut={{ modifiers: ["cmd"], key: "g" }}
-                      />
-                      <Action
-                        title="Reload Shader Content"
-                        icon={Icon.ArrowClockwise}
-                        onAction={revalidate}
-                        shortcut={{ modifiers: ["cmd"], key: "r" }}
-                      />
-                    </ActionPanel>
-                  }
-                />
-              );
-            })}
-          </List.Section>
+                return (
+                  <List.Item
+                    key={item.id}
+                    icon={{ tooltip: shaderTooltip, value: shaderIcon }}
+                    title={item.lineNumber ? `Ln ${item.lineNumber}` : "Unknown Line"}
+                    subtitle={subtitle}
+                    keywords={[item.type, ...item.keywords]}
+                    accessories={accessories}
+                    actions={
+                      <ActionPanel>
+                        <Action
+                          title={currentCore ? `Compile for ${currentCore}` : "Compile with Malioc"}
+                          onAction={() => handleCompileShader(item.code, item.type)}
+                        />
+                        <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
+                        <Action
+                          title="Select Gpu Core for Session"
+                          icon={Icon.ComputerChip}
+                          onAction={() =>
+                            push(<SelectGpuCoreView onSelect={setSessionGpuCore} currentCore={currentCore} />)
+                          }
+                          shortcut={{ modifiers: ["cmd"], key: "g" }}
+                        />
+                        <Action
+                          title="Reload Shader Content"
+                          icon={Icon.ArrowClockwise}
+                          onAction={revalidate}
+                          shortcut={{ modifiers: ["cmd"], key: "r" }}
+                        />
+                      </ActionPanel>
+                    }
+                  />
+                );
+              })}
+            </List.Section>
           );
         })
       )}
@@ -473,10 +461,7 @@ function SelectGpuCoreView({
   if (error) {
     return (
       <List>
-        <List.EmptyView
-          title="Failed to Load GPU Cores"
-          description={error.message}
-        />
+        <List.EmptyView title="Failed to Load GPU Cores" description={error.message} />
       </List>
     );
   }
@@ -488,9 +473,7 @@ function SelectGpuCoreView({
           key={core.id}
           title={core.name}
           icon={currentCore === core.id ? Icon.CheckCircle : Icon.Circle}
-          accessories={[
-            currentCore === core.id ? { tag: { value: "Current", color: Color.Green } } : {},
-          ]}
+          accessories={[currentCore === core.id ? { tag: { value: "Current", color: Color.Green } } : {}]}
           actions={
             <ActionPanel>
               <Action

@@ -13,7 +13,7 @@
   "commands": [
     {
       "name": "compile-shader",
-      "title": "Compile Shader with MaliOC",
+      "title": "Compile Shader",
       "description": "Compile selected GLES shader code with MaliOC and show performance stats.",
       "mode": "view"
     },

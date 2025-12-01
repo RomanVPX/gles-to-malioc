@@ -60,8 +60,10 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
   const passes = extractPasses(content);
 
   if (DEBUG && passes.length > 0) {
-    console.log(`[Parser] Found ${passes.length} pass(es):`,
-      passes.map(p => `Pass ${p.index}${p.name ? `: "${p.name}"` : ""}`).join(", "));
+    console.log(
+      `[Parser] Found ${passes.length} pass(es):`,
+      passes.map((p) => `Pass ${p.index}${p.name ? `: "${p.name}"` : ""}`).join(", "),
+    );
   }
 
   // Split by the separator line (multiple slashes) but keep track of line numbers
@@ -104,7 +106,7 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
     console.log(`[Parser] Parsed ${content.length} chars → ${variants.length} variant(s)`);
     if (variants.length === 0) {
       // Show what we tried to parse when nothing was found
-      const preview = content.substring(0, 500).replace(/\n/g, '\\n');
+      const preview = content.substring(0, 500).replace(/\n/g, "\\n");
       console.log(`[Parser] No variants found. First 500 chars: "${preview}"`);
     }
   }
@@ -124,11 +126,7 @@ function findPassForLine(passes: PassInfo[], lineNumber: number): PassInfo | und
   return undefined;
 }
 
-function parseVariantBlock(
-  block: string,
-  blockStartLine: number,
-  passInfo?: PassInfo
-): ParsedShaderVariant | null {
+function parseVariantBlock(block: string, blockStartLine: number, passInfo?: PassInfo): ParsedShaderVariant | null {
   const lines = block.split("\n");
 
   // Extract keywords
@@ -198,7 +196,7 @@ function parseVariantBlock(
 function extractShaderCodeWithLine(
   block: string,
   shaderType: "VERTEX" | "FRAGMENT",
-  blockStartLine: number
+  blockStartLine: number,
 ): { code: string; versionLine: number } | undefined {
   const ifdefPattern = new RegExp(`^\\s*#ifdef\\s+${shaderType}\\s*$`, "i");
   const endifPattern = /^\s*#endif\s*$/i;

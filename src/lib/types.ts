@@ -5,7 +5,7 @@ export type ShaderType = "vertex" | "fragment";
 export interface ParsedShaderVariant {
   /** Unique ID for this variant (for React key) */
   id: string;
-  /** Keywords for this variant, e.g., ["LIVERY_MASKS_ENABLED"] or ["<none>"] */
+  /** Keywords for this variant, e.g., ["ALL_MASKS_ENABLED"] or ["<none>"] */
   keywords: string[];
   /** Hardware tier, e.g., "Tier 1" */
   tier?: string;

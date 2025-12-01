@@ -230,11 +230,11 @@ function chooseCore(cores: GpuCore[], defaultCore?: string | null): string {
 }
 
 // --- MaliOC Validation ---
-async function validateMaliOC(path: string): Promise<{isValid: boolean, error?: string}> {
+async function validateMaliOC(path: string): Promise<{ isValid: boolean; error?: string }> {
   return new Promise((resolve) => {
     exec(`"${path}" --version`, (error, stdout, stderr) => {
       if (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           resolve({ isValid: false, error: "MaliOC executable not found at specified path" });
         } else {
           resolve({ isValid: false, error: `Failed to execute MaliOC: ${error.message}` });
@@ -267,65 +267,63 @@ export default function ProfileShader() {
   const [maliocError, setMaliocError] = useState<string | undefined>(undefined);
   const validateMaliocStarted = useRef(false);
 
-
-
   useEffect(() => {
     if (validateMaliocStarted.current) {
-        return;
+      return;
     }
     validateMaliocStarted.current = true;
 
     async function validateAndFetchCores() {
-        try {
-            const defaultCore = await getDefaultGpuCore();
-            // Load from cache for fast UI
-            const cached = await loadGpuCoresFromCache();
-            if (cached && cached.cores.length > 0) {
-                setGpuCores(cached.cores);
-                setGpuCore(chooseCore(cached.cores, defaultCore));
-                setIsLoading(false);
-            }
-
-            // Validate MaliOC
-            const validation = await validateMaliOC(MALIOC_PATH);
-            setMaliocValid(validation.isValid);
-
-            if (!validation.isValid) {
-                setMaliocError(validation.error);
-                setIsLoading(false);
-                showToast({
-                    style: Toast.Style.Failure,
-                    title: "MaliOC Path Invalid",
-                    message: validation.error || "Please check your MaliOC installation path in preferences"
-                });
-                return;
-            }
-
-            // If cache is missing or stale, fetch fresh cores and cache them
-            const cacheIsFresh = cached ? isCacheFresh(cached.timestamp) : false;
-            if (!cacheIsFresh) {
-                try {
-                    const cores = await fetchGpuCoresFromMalioc();
-                    setGpuCores(cores);
-                    if (cores.length > 0) {
-                        setGpuCore(chooseCore(cores, defaultCore));
-                    }
-                    await saveGpuCoresToCache(cores);
-                } catch (error) {
-                    console.error("MaliOC cores fetch failed:", error);
-                    setCoresError("Could not fetch GPU cores. Please enter one manually.");
-                    if (defaultCore) {
-                      setGpuCore(defaultCore);
-                    }
-                }
-            }
-
-            setIsLoading(false);
-        } catch (e) {
-            console.error("Validation error:", e);
-            setMaliocError("Unexpected error during MaliOC validation");
-            setIsLoading(false);
+      try {
+        const defaultCore = await getDefaultGpuCore();
+        // Load from cache for fast UI
+        const cached = await loadGpuCoresFromCache();
+        if (cached && cached.cores.length > 0) {
+          setGpuCores(cached.cores);
+          setGpuCore(chooseCore(cached.cores, defaultCore));
+          setIsLoading(false);
         }
+
+        // Validate MaliOC
+        const validation = await validateMaliOC(MALIOC_PATH);
+        setMaliocValid(validation.isValid);
+
+        if (!validation.isValid) {
+          setMaliocError(validation.error);
+          setIsLoading(false);
+          showToast({
+            style: Toast.Style.Failure,
+            title: "MaliOC Path Invalid",
+            message: validation.error || "Please check your MaliOC installation path in preferences",
+          });
+          return;
+        }
+
+        // If cache is missing or stale, fetch fresh cores and cache them
+        const cacheIsFresh = cached ? isCacheFresh(cached.timestamp) : false;
+        if (!cacheIsFresh) {
+          try {
+            const cores = await fetchGpuCoresFromMalioc();
+            setGpuCores(cores);
+            if (cores.length > 0) {
+              setGpuCore(chooseCore(cores, defaultCore));
+            }
+            await saveGpuCoresToCache(cores);
+          } catch (error) {
+            console.error("MaliOC cores fetch failed:", error);
+            setCoresError("Could not fetch GPU cores. Please enter one manually.");
+            if (defaultCore) {
+              setGpuCore(defaultCore);
+            }
+          }
+        }
+
+        setIsLoading(false);
+      } catch (e) {
+        console.error("Validation error:", e);
+        setMaliocError("Unexpected error during MaliOC validation");
+        setIsLoading(false);
+      }
     }
 
     validateAndFetchCores();
@@ -347,7 +345,7 @@ export default function ProfileShader() {
       if (fragRe.test(first)) return "fragment";
       // Simple heuristics as a fallback
       if (src.includes("gl_Position")) return "vertex";
-      if (src.includes("gl_FragCoord") || /\bout\s+vec[234]/.test(src)) return "fragment";
+      if (src.includes("SV_Target") || /\bout\s+vec[234]/.test(src)) return "fragment";
       return null;
     } catch {
       return null;
@@ -361,10 +359,18 @@ export default function ProfileShader() {
       if (detected) {
         setShaderType(detected);
       } else {
-        await showToast({ style: Toast.Style.Failure, title: "Failed to detect shader type", message: "Choose shader type manually" });
+        await showToast({
+          style: Toast.Style.Failure,
+          title: "Failed to detect shader type",
+          message: "Choose shader type manually",
+        });
       }
-    } catch (e) {
-      await showToast({ style: Toast.Style.Failure, title: "Failed to get selected text", message: "Select shader text and try again" });
+    } catch {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Failed to get selected text",
+        message: "Select shader text and try again",
+      });
     }
   }
 
@@ -381,7 +387,11 @@ export default function ProfileShader() {
       return;
     }
     if (shaderType === "unset") {
-      await showToast({ style: Toast.Style.Failure, title: "Select Shader Type", message: "Choose shader type manually or use Detect Shader Type" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Select Shader Type",
+        message: "Choose shader type manually or use Detect Shader Type",
+      });
       setIsLoading(false);
       return;
     }
@@ -407,7 +417,11 @@ export default function ProfileShader() {
 
   async function handleRefreshCores() {
     if (maliocValid !== true) {
-      await showToast({ style: Toast.Style.Failure, title: "MaliOC Not Valid", message: "Cannot refresh cores until MaliOC path is valid." });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "MaliOC Not Valid",
+        message: "Cannot refresh cores until MaliOC path is valid.",
+      });
       return;
     }
     setIsLoading(true);
@@ -419,7 +433,11 @@ export default function ProfileShader() {
         setGpuCore(chooseCore(cores, defaultCore));
       }
       await saveGpuCoresToCache(cores);
-      await showToast({ style: Toast.Style.Success, title: "GPU Cores Updated", message: `Loaded ${cores.length} cores` });
+      await showToast({
+        style: Toast.Style.Success,
+        title: "GPU Cores Updated",
+        message: `Loaded ${cores.length} cores`,
+      });
     } catch (error) {
       console.error("Manual refresh failed:", error);
       setCoresError("Could not fetch GPU cores. Please enter one manually.");
@@ -435,11 +453,16 @@ export default function ProfileShader() {
       <Form
         actions={
           <ActionPanel>
-            <Action title="Fix MaliOC Path" onAction={() => showToast({
-              style: Toast.Style.Failure,
-              title: "Open Raycast Preferences",
-              message: "Go to Extensions → GLES to MaliOC → Configure MaliOC Path"
-            })} />
+            <Action
+              title="Fix Malioc Path"
+              onAction={() =>
+                showToast({
+                  style: Toast.Style.Failure,
+                  title: "Open Raycast Preferences",
+                  message: "Go to Extensions → GLES to MaliOC → Configure MaliOC Path",
+                })
+              }
+            />
           </ActionPanel>
         }
       >
@@ -458,27 +481,31 @@ export default function ProfileShader() {
         <ActionPanel>
           {maliocValid ? (
             <>
-              {shaderType !== "unset" && (
-                <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />
-              )}
+              {shaderType !== "unset" && <Action.SubmitForm title="Profile Shader" onSubmit={handleSubmit} />}
               <Action title="Detect Shader Type" onAction={handleDetectShaderType} />
-              <Action title="Set Current GPU Core as Default" onAction={handleSetDefaultGpuCore} shortcut={{ modifiers: ["cmd"], key: "d" }}/>
+              <Action
+                title="Set Current GPU Core as Default"
+                onAction={handleSetDefaultGpuCore}
+                shortcut={{ modifiers: ["cmd"], key: "d" }}
+              />
               <Action title="Refresh GPU Cores" onAction={handleRefreshCores} />
             </>
           ) : (
-            <Action title="Validating MaliOC..." onAction={() => {}} />
+            <Action title="Validating MaliOC…" onAction={() => {}} />
           )}
         </ActionPanel>
       }
-
     >
-      <Form.Dropdown id="shaderType" title="Shader Type" value={shaderType} onChange={(val) => {
-        const v = val as ShaderType;
-        setShaderType(v);
-      }}>
-        {shaderType === "unset" && (
-          <Form.Dropdown.Item value="unset" title="Select Shader Type" />
-        )}
+      <Form.Dropdown
+        id="shaderType"
+        title="Shader Type"
+        value={shaderType}
+        onChange={(val) => {
+          const v = val as ShaderType;
+          setShaderType(v);
+        }}
+      >
+        {shaderType === "unset" && <Form.Dropdown.Item value="unset" title="Select Shader Type" />}
         <Form.Dropdown.Item value="vertex" title="Vertex" />
         <Form.Dropdown.Item value="fragment" title="Fragment" />
       </Form.Dropdown>
@@ -487,7 +514,7 @@ export default function ProfileShader() {
           id="gpuCoreInput"
           title="GPU Core"
           value={gpuCore}
-          onChange={(val) => setGpuCore(typeof val === "string" ? val : (val as any)?.text ?? "")}
+          onChange={(val) => setGpuCore(val)}
           error={coresError}
         />
       ) : (
@@ -497,7 +524,13 @@ export default function ProfileShader() {
           ))}
         </Form.Dropdown>
       )}
-      <Form.Dropdown id="outputMode" title="Output Mode" value={outputMode} onChange={(value) => setOutputMode(value as OutputMode)} storeValue>
+      <Form.Dropdown
+        id="outputMode"
+        title="Output Mode"
+        value={outputMode}
+        onChange={(value) => setOutputMode(value as OutputMode)}
+        storeValue
+      >
         <Form.Dropdown.Item value="text" title="Plain Text" />
         <Form.Dropdown.Item value="json" title="Structured Report" />
       </Form.Dropdown>
@@ -512,7 +545,7 @@ export function ResultView({ output, mode }: { output: string; mode: OutputMode 
       const jsonData = JSON.parse(output) as MaliJsonOutput;
       const markdown = formatJsonReport(jsonData);
 
-      const shaderInfo = (jsonData as any).shaders?.[0];
+      const shaderInfo = jsonData.shaders?.[0];
       const core = shaderInfo?.hardware?.core ?? "unknown-core";
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const baseName = `malioc-report-${core}-${timestamp}`;
@@ -522,7 +555,7 @@ export function ResultView({ output, mode }: { output: string; mode: OutputMode 
         let target = join(baseDir, filename);
         try {
           await writeFile(target, contents, { encoding: "utf8" });
-        } catch (e) {
+        } catch {
           // fallback to tmp if Downloads not accessible
           target = join(tmpdir(), filename);
           await writeFile(target, contents, { encoding: "utf8" });
@@ -564,7 +597,7 @@ export function ResultView({ output, mode }: { output: string; mode: OutputMode 
         let target = join(baseDir, filename);
         try {
           await writeFile(target, contents, { encoding: "utf8" });
-        } catch (e) {
+        } catch {
           target = join(tmpdir(), filename);
           await writeFile(target, contents, { encoding: "utf8" });
         }
@@ -598,7 +631,7 @@ export function ResultView({ output, mode }: { output: string; mode: OutputMode 
     let target = join(baseDir, filename);
     try {
       await writeFile(target, contents, { encoding: "utf8" });
-    } catch (e) {
+    } catch {
       target = join(tmpdir(), filename);
       await writeFile(target, contents, { encoding: "utf8" });
     }
@@ -639,7 +672,7 @@ function formatJsonReport(data: MaliJsonOutput): string {
   }
 
   // Render all shaders found in the report (usually 1)
-  const parts = performanceReport.shaders.map((shader, idx) => {
+  const parts = performanceReport.shaders.map((shader) => {
     // If no variants – still show basic info
     if (!shader.variants || shader.variants.length === 0) {
       return formatBasicInfo(performanceReport, shader);
@@ -660,13 +693,17 @@ function formatErrorReport(report: MaliErrorReport, shader: MaliShaderInfo & { e
 - **Shader:** ${shader.shader.api} ${shader.shader.type}
 
 ## Compilation Errors
-${shader.errors.map(error => `- ${error}`).join('\n')}
+${shader.errors.map((error) => `- ${error}`).join("\n")}
 
-${shader.warnings.length > 0 ? `## Warnings
-${shader.warnings.map(warning => `- ${warning}`).join('\n')}` : ''}
+${
+  shader.warnings.length > 0
+    ? `## Warnings
+${shader.warnings.map((warning) => `- ${warning}`).join("\n")}`
+    : ""
+}
 
 ---
-*${report.producer.name} v${report.producer.version.join('.')} (Build ${report.producer.build})*
+*${report.producer.name} v${report.producer.version.join(".")} (Build ${report.producer.build})*
 `;
 }
 
@@ -679,14 +716,22 @@ function formatBasicInfo(report: MaliPerformanceReport, shader: MaliShaderInfo):
 - **Driver:** ${shader.driver}
 - **Shader:** ${shader.shader.api} ${shader.shader.type}
 
-${shader.warnings.length > 0 ? `## Warnings
-${shader.warnings.map(warning => `- ${warning}`).join('\n')}
+${
+  shader.warnings.length > 0
+    ? `## Warnings
+${shader.warnings.map((warning) => `- ${warning}`).join("\n")}
 
-` : ''}${shader.notes.length > 0 ? `## Notes
-${shader.notes.map(note => `- ${note}`).join('\n')}
+`
+    : ""
+}${
+    shader.notes.length > 0
+      ? `## Notes
+${shader.notes.map((note) => `- ${note}`).join("\n")}
 
-` : ''}---
-*${report.producer.name} v${report.producer.version.join('.')} (Build ${report.producer.build})*
+`
+      : ""
+  }---
+*${report.producer.name} v${report.producer.version.join(".")} (Build ${report.producer.build})*
 `;
 }
 
@@ -716,20 +761,22 @@ function formatPerformanceReport(report: MaliPerformanceReport, shader: MaliShad
       })
       .map((s) => s.padStart(8));
 
-    const boundDisplay = (cost.bound_pipelines || [])
-      .filter((bp): bp is string => !!bp)
-      .map((bp) => getPipelineDisplayName(bp))
-      .join(", ") || "N/A";
+    const boundDisplay =
+      (cost.bound_pipelines || [])
+        .filter((bp): bp is string => !!bp)
+        .map((bp) => getPipelineDisplayName(bp))
+        .join(", ") || "N/A";
 
     return `| ${title.padEnd(25)} | ${cycles.join(" | ")} | ${boundDisplay} |`;
   };
 
   // Format all top-level shader properties
-  const shaderPropsSection = shader.properties && shader.properties.length > 0
-    ? `## Shader Properties\n${shader.properties
-        .map((p) => `- **${p.display_name}**: \`${formatNumber(p.value)}\``)
-        .join("\n")}\n\n`
-    : "";
+  const shaderPropsSection =
+    shader.properties && shader.properties.length > 0
+      ? `## Shader Properties\n${shader.properties
+          .map((p) => `- **${p.display_name}**: \`${formatNumber(p.value)}\``)
+          .join("\n")}\n\n`
+      : "";
 
   // Format each variant in detail
   const variantsSections = shader.variants
@@ -770,48 +817,58 @@ ${shaderPropsSection}## Variants
 
 ${variantsSections}
 
-${shader.warnings.length > 0 ? `## Warnings
+${
+  shader.warnings.length > 0
+    ? `## Warnings
 ${shader.warnings.map((warning) => `⚠️ ${warning}`).join("\n")}
 
-` : ""}${shader.notes.length > 0 ? `## Notes
+`
+    : ""
+}${
+    shader.notes.length > 0
+      ? `## Notes
 ${shader.notes.map((note) => `ℹ️ ${note}`).join("\n")}
 
-` : ""}${shader.attribute_streams ? formatAttributeStreams(shader.attribute_streams) : ""}---
+`
+      : ""
+  }${shader.attribute_streams ? formatAttributeStreams(shader.attribute_streams) : ""}---
 *${report.producer.name} v${report.producer.version.join(".")} (Build ${report.producer.build})*
 `;
 }
 
-function formatAttributeStreams(streams: { position?: MaliVertexAttribute[]; nonposition?: MaliVertexAttribute[] }): string {
-  let result = '## Recommended Attribute Streams\n\n';
+function formatAttributeStreams(streams: {
+  position?: MaliVertexAttribute[];
+  nonposition?: MaliVertexAttribute[];
+}): string {
+  let result = "## Recommended Attribute Streams\n\n";
 
   if (streams.position && streams.position.length > 0) {
-    result += '**Position attributes:**\n';
-    streams.position.forEach(attr => {
-      const location = attr.location !== null ? `location=${attr.location}` : 'location=dynamic';
+    result += "**Position attributes:**\n";
+    streams.position.forEach((attr) => {
+      const location = attr.location !== null ? `location=${attr.location}` : "location=dynamic";
       result += `- \`${attr.symbol}\` (${location})\n`;
     });
-    result += '\n';
+    result += "\n";
   }
 
   if (streams.nonposition && streams.nonposition.length > 0) {
-    result += '**Non-position attributes:**\n';
-    streams.nonposition.forEach(attr => {
-      const location = attr.location !== null ? `location=${attr.location}` : 'location=dynamic';
+    result += "**Non-position attributes:**\n";
+    streams.nonposition.forEach((attr) => {
+      const location = attr.location !== null ? `location=${attr.location}` : "location=dynamic";
       result += `- \`${attr.symbol}\` (${location})\n`;
     });
-    result += '\n';
+    result += "\n";
   }
 
   return result;
 }
 
-
 // --- Core Shader Processing Logic ---
 export async function processShader(content: string, type: string, core: string, mode: OutputMode): Promise<string> {
   let processedContent = content.trim();
-  let detectedType = type;
+  const detectedType = type;
 
-  const lines = processedContent.split('\n');
+  const lines = processedContent.split("\n");
 
   if (lines[0].trim().startsWith("#ifdef VERTEX") || lines[0].trim().startsWith("#ifdef FRAGMENT")) {
     lines.shift();
@@ -820,11 +877,15 @@ export async function processShader(content: string, type: string, core: string,
     lines.pop();
   }
 
-  processedContent = lines.join('\n').trim();
+  processedContent = lines.join("\n").trim();
   if (!processedContent.trim().startsWith("#version")) {
     throw new Error(`Invalid shader: must start with #version. Starts with: "${processedContent.split("\n")[0]}"`);
   }
-  if (processedContent.includes("layout") && processedContent.includes("binding") && processedContent.includes("#version 300 es")) {
+  if (
+    processedContent.includes("layout") &&
+    processedContent.includes("binding") &&
+    processedContent.includes("#version 300 es")
+  ) {
     processedContent = processedContent.replace("#version 300 es", "#version 310 es");
     await showToast({ style: Toast.Style.Success, title: "Info", message: "Upgraded shader to GLES 3.10" });
   }
