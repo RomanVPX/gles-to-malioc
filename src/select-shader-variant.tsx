@@ -16,7 +16,7 @@ import { ResultView, getDefaultGpuCore, processShader, getAvailableGpuCores, typ
 type ShaderTypeFilter = "all" | "vertex" | "fragment";
 
 // Maximum total character count for displayed keywords in tags
-const MAX_KEYWORDS_DISPLAY_LENGTH = 55;
+const MAX_KEYWORDS_DISPLAY_LENGTH = 53;
 // Maximum total character count for section title keywords
 const MAX_SECTION_TITLE_LENGTH = 80;
 
