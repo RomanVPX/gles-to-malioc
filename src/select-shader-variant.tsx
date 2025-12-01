@@ -11,7 +11,7 @@ import {
   Color,
 } from "@raycast/api";
 import { parseCompiledShader, variantsToListItems } from "./lib/shader-parser";
-import { ResultView, getDefaultGpuCore, processShader, getAvailableGpuCores, type GpuCore } from "./profile-shader";
+import { ResultView, getDefaultGpuCore, processShader, getAvailableGpuCores, type GpuCore } from "./compile-shader";
 
 type ShaderTypeFilter = "all" | "vertex" | "fragment";
 
@@ -196,14 +196,14 @@ export default function SelectShaderVariant() {
     groupedByKeywords.get(key)!.push(item);
   }
 
-  async function handleProfileShader(code: string, type: "vertex" | "fragment") {
+  async function handleCompileShader(code: string, type: "vertex" | "fragment") {
     try {
-      await showToast({ style: Toast.Style.Animated, title: "Profiling shader..." });
+      await showToast({ style: Toast.Style.Animated, title: "Compiling shader..." });
 
       // Use session core if set, otherwise use default
       const coreToUse = sessionGpuCore || defaultGpuCore;
       if (!coreToUse) {
-        throw new Error("No GPU core selected. Please select a core or set a default in 'Profile Shader' command.");
+        throw new Error("No default GPU core selected. Please select a core with 'Select GPU Core for Session' command or set a default in 'Compile Shader with MaliOC' command.");
       }
 
       // Process shader
@@ -214,13 +214,13 @@ export default function SelectShaderVariant() {
 
       await showToast({
         style: Toast.Style.Success,
-        title: "Profiling Complete",
+        title: "Compiling Complete",
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       await showToast({
         style: Toast.Style.Failure,
-        title: "Profiling Failed",
+        title: "Compiling Failed",
         message,
       });
     }
@@ -414,7 +414,7 @@ export default function SelectShaderVariant() {
                     <ActionPanel>
                       <Action
                         title={currentCore ? `Compile for ${currentCore}` : "Compile with MaliOC"}
-                        onAction={() => handleProfileShader(item.code, item.type)}
+                        onAction={() => handleCompileShader(item.code, item.type)}
                       />
                       <Action.CopyToClipboard title="Copy Shader Code" content={item.code} />
                       <Action
