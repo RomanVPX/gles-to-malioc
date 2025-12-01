@@ -1,7 +1,7 @@
 import { ParsedShaderVariant } from "./types";
 
 // Set to true to enable detailed parsing logs
-const DEBUG = true;
+const DEBUG = false;
 
 interface PassInfo {
   index: number;
@@ -19,7 +19,7 @@ function extractPasses(content: string): PassInfo[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
+
     // Look for " Pass {" pattern
     if (/^\s*Pass\s*\{/.test(line)) {
       const passInfo: PassInfo = {
@@ -58,15 +58,14 @@ export function parseCompiledShader(content: string): ParsedShaderVariant[] {
 
   // First, extract all passes with their info
   const passes = extractPasses(content);
-  
+
   if (DEBUG && passes.length > 0) {
-    console.log(`[Parser] Found ${passes.length} pass(es):`, 
+    console.log(`[Parser] Found ${passes.length} pass(es):`,
       passes.map(p => `Pass ${p.index}${p.name ? `: "${p.name}"` : ""}`).join(", "));
   }
 
   // Split by the separator line (multiple slashes) but keep track of line numbers
   const allLines = content.split("\n");
-  let currentLine = 0;
   let currentBlock = "";
   let blockStartLine = 0;
 
@@ -126,8 +125,8 @@ function findPassForLine(passes: PassInfo[], lineNumber: number): PassInfo | und
 }
 
 function parseVariantBlock(
-  block: string, 
-  blockStartLine: number, 
+  block: string,
+  blockStartLine: number,
   passInfo?: PassInfo
 ): ParsedShaderVariant | null {
   const lines = block.split("\n");
